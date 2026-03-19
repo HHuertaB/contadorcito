@@ -7,68 +7,56 @@ echo  ContaSAT - Iniciando...
 echo  -------------------------------------------------------
 echo.
 
-:: Detectar Python
-set "PYTHON="
-python --version >nul 2>&1
-if %errorlevel% equ 0 set "PYTHON=python"
-if not defined PYTHON (
-    py --version >nul 2>&1
-    if %errorlevel% equ 0 set "PYTHON=py"
-)
-if not defined PYTHON (
-    echo  [ERROR] Python no encontrado.
-    echo          Ejecuta instalar_contasat.bat nuevamente.
+:: Ruta del entorno virtual relativa a la carpeta src
+set "VENV_PY=%~dp0..\venv\Scripts\python.exe"
+set "VENV_PIP=%~dp0..\venv\Scripts\pip.exe"
+
+:: Verificar que el entorno virtual exista
+if not exist "%VENV_PY%" (
+    echo  [ERROR] Entorno virtual no encontrado.
+    echo.
+    echo  Ejecuta instalar_contasat.bat nuevamente para crearlo.
+    echo.
     pause
     exit /b 1
 )
 
 :: Verificar que app.py exista
 if not exist "%~dp0app.py" (
-    echo  [ERROR] No se encontro app.py
+    echo  [ERROR] No se encontro app.py.
     echo          Ejecuta instalar_contasat.bat nuevamente.
     pause
     exit /b 1
 )
 
-:: Verificar cfdiclient
-echo  Verificando cfdiclient...
-%PYTHON% -c "from cfdiclient import Autenticacion, DescargaMasiva, Fiel, SolicitaDescarga, VerificaSolicitudDescarga" >nul 2>&1
+:: Verificar cfdiclient dentro del venv
+echo  Verificando dependencias...
+"%VENV_PY%" -c "from cfdiclient import Autenticacion, DescargaMasiva, Fiel, SolicitaDescarga, VerificaSolicitudDescarga" >nul 2>&1
 if %errorlevel% neq 0 (
-    echo  [INFO] Actualizando cfdiclient...
-    %PYTHON% -m pip install cfdiclient --upgrade --quiet
-    %PYTHON% -c "from cfdiclient import Autenticacion, DescargaMasiva, Fiel, SolicitaDescarga, VerificaSolicitudDescarga" >nul 2>&1
+    echo  [INFO] Reinstalando cfdiclient en el entorno virtual...
+    "%VENV_PIP%" install cfdiclient --force-reinstall --quiet
+    "%VENV_PY%" -c "from cfdiclient import Autenticacion, DescargaMasiva, Fiel, SolicitaDescarga, VerificaSolicitudDescarga" >nul 2>&1
     if %errorlevel% neq 0 (
-        echo  [ERROR] cfdiclient no se pudo actualizar.
-        echo.
-        echo  Ejecuta en una terminal con permisos de administrador:
-        echo    pip install cfdiclient --upgrade --force-reinstall
-        echo.
+        echo  [ERROR] cfdiclient no funciona.
+        echo          Ejecuta instalar_contasat.bat nuevamente.
         pause
         exit /b 1
     )
-    echo  [OK] cfdiclient actualizado.
 )
 
-:: Verificar pywebview
-%PYTHON% -c "import webview" >nul 2>&1
+:: Verificar pywebview dentro del venv
+"%VENV_PY%" -c "import webview" >nul 2>&1
 if %errorlevel% neq 0 (
-    echo  [INFO] Instalando pywebview...
-    %PYTHON% -m pip install pywebview --quiet
+    echo  [INFO] Instalando pywebview en el entorno virtual...
+    "%VENV_PIP%" install pywebview --quiet
 )
 
-:: Verificar openpyxl
-%PYTHON% -c "import openpyxl" >nul 2>&1
-if %errorlevel% neq 0 (
-    echo  [INFO] Instalando openpyxl...
-    %PYTHON% -m pip install openpyxl --quiet
-)
-
-echo  [OK] Dependencias verificadas.
+echo  [OK] Dependencias verificadas en el entorno virtual.
 echo.
 echo  [OK] Abriendo ContaSAT...
 echo.
 
-%PYTHON% app.py
+"%VENV_PY%" app.py
 
 if %errorlevel% neq 0 (
     echo.
@@ -77,12 +65,12 @@ if %errorlevel% neq 0 (
     echo  -------------------------------------------------------
     echo.
     echo  Diagnostico:
-    %PYTHON% --version
-    %PYTHON% -c "import cfdiclient; print('cfdiclient OK')" 2>&1
-    %PYTHON% -c "import webview; print('pywebview OK')" 2>&1
+    "%VENV_PY%" --version
+    "%VENV_PY%" -c "import cfdiclient; print('cfdiclient: OK')" 2>&1
+    "%VENV_PY%" -c "import webview; print('pywebview: OK')" 2>&1
     echo.
-    echo  Si el problema persiste:
-    echo  1. Ejecuta instalar_contasat.bat nuevamente
+    echo  Opciones:
+    echo  1. Ejecuta instalar_contasat.bat nuevamente.
     echo  2. Revisa el log: ..\contabilidad_sat\descarga_sat.log
     echo.
     pause

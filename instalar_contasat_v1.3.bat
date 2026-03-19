@@ -1,6 +1,6 @@
 @echo off
 setlocal EnableDelayedExpansion
-title ContaSAT - Instalador v1.2
+title ContaSAT - Instalador v1.3
 
 :: ============================================================
 ::  ContaSAT - Instalador Auto-descarga desde GitHub
@@ -10,19 +10,23 @@ title ContaSAT - Instalador v1.2
 set "REPO_RAW=https://raw.githubusercontent.com/HHuertaB/contadorcito/main"
 set "REPO_URL=https://github.com/HHuertaB/contadorcito"
 set "INSTALL_DIR=%USERPROFILE%\ContaSAT"
+set "VENV_DIR=%INSTALL_DIR%\venv"
+set "VENV_PY=%VENV_DIR%\Scripts\python.exe"
+set "VENV_PIP=%VENV_DIR%\Scripts\pip.exe"
 set "LOG_FILE=%INSTALL_DIR%\logs\instalacion.log"
 set "TASK_NAME=ContaSAT_DescargaMensual"
 set "PYTHON_URL=https://www.python.org/ftp/python/3.12.4/python-3.12.4-amd64.exe"
 set "PYTHON_INSTALLER=%TEMP%\python_installer.exe"
-set "PYTHON_CMD="
+set "SYSTEM_PYTHON="
 
 call :print_header
 call :check_admin
 call :check_internet
 call :create_dirs
 call :check_python
-call :download_scripts
+call :create_venv
 call :install_dependencies
+call :download_scripts
 call :register_task
 call :create_shortcut
 call :final_message
@@ -34,7 +38,7 @@ goto :eof
 cls
 echo.
 echo  +======================================================+
-echo  ^|    ContaSAT - Instalador Automatico v1.2            ^|
+echo  ^|    ContaSAT - Instalador Automatico v1.3            ^|
 echo  ^|    Gestion de CFDIs del SAT Mexico                  ^|
 echo  ^|    github.com/HHuertaB/contadorcito                 ^|
 echo  +======================================================+
@@ -70,7 +74,7 @@ if %errorlevel% neq 0 (
     pause
     exit /b 1
 )
-echo  [OK] Conexion disponible. GitHub accesible.
+echo  [OK] Conexion disponible.
 goto :eof
 
 
@@ -90,40 +94,123 @@ goto :eof
 :: ============================================================
 :check_python
 echo.
-echo  [3/7] Verificando Python...
-python --version >nul 2>&1
-if %errorlevel% equ 0 (
-    for /f "tokens=2" %%v in ('python --version 2^>^&1') do set "PYVER=%%v"
-    set "PYTHON_CMD=python"
-    echo  [OK] Python !PYVER! encontrado.
+echo  [3/7] Verificando Python del sistema...
+
+:: Buscar Python 3.10 o superior en el sistema
+for %%v in (python python3 py) do (
+    %%v --version >nul 2>&1
+    if !errorlevel! equ 0 (
+        for /f "tokens=2" %%n in ('%%v --version 2^>^&1') do (
+            for /f "tokens=1,2 delims=." %%a in ("%%n") do (
+                if %%a equ 3 if %%b GEQ 10 (
+                    set "SYSTEM_PYTHON=%%v"
+                    echo  [OK] Python %%n encontrado (%%v^).
+                )
+            )
+        )
+    )
+)
+
+if not defined SYSTEM_PYTHON (
+    :: Intentar con cualquier Python 3 aunque sea menor a 3.10
+    python --version >nul 2>&1
+    if %errorlevel% equ 0 (
+        set "SYSTEM_PYTHON=python"
+        echo  [WARN] Python encontrado pero puede ser version menor a 3.10.
+        echo         Se intentara crear el entorno virtual de todas formas.
+    ) else (
+        py --version >nul 2>&1
+        if %errorlevel% equ 0 (
+            set "SYSTEM_PYTHON=py"
+            echo  [WARN] Python encontrado (launcher py^).
+        ) else (
+            echo  [INFO] Python no encontrado. Descargando Python 3.12...
+            curl --max-time 120 --retry 2 -L "%PYTHON_URL%" -o "%PYTHON_INSTALLER%" --progress-bar
+            if %errorlevel% neq 0 (
+                echo  [ERROR] No se pudo descargar Python. Instala desde python.org
+                pause
+                exit /b 1
+            )
+            echo  [INFO] Instalando Python 3.12...
+            "%PYTHON_INSTALLER%" /quiet InstallAllUsers=1 PrependPath=1 Include_test=0
+            del "%PYTHON_INSTALLER%" >nul 2>&1
+            set "SYSTEM_PYTHON=python"
+            for /f "tokens=2*" %%a in ('reg query "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment" /v PATH 2^>nul') do set "PATH=%%b;%PATH%"
+            echo  [OK] Python 3.12 instalado.
+        )
+    )
+)
+goto :eof
+
+
+:: ============================================================
+:create_venv
+echo.
+echo  [4/7] Configurando entorno virtual (venv)...
+
+if exist "%VENV_PY%" (
+    echo  [OK] Entorno virtual ya existe. Actualizando pip...
+    "%VENV_PY%" -m pip install --upgrade pip --quiet >> "%LOG_FILE%" 2>&1
     goto :eof
 )
-py --version >nul 2>&1
-if %errorlevel% equ 0 (
-    for /f "tokens=2" %%v in ('py --version 2^>^&1') do set "PYVER=%%v"
-    set "PYTHON_CMD=py"
-    echo  [OK] Python !PYVER! encontrado.
-    goto :eof
-)
-echo  [INFO] Descargando Python 3.12...
-curl --max-time 120 --retry 2 -L "%PYTHON_URL%" -o "%PYTHON_INSTALLER%" --progress-bar
+
+echo         Creando entorno virtual en: %VENV_DIR%
+%SYSTEM_PYTHON% -m venv "%VENV_DIR%"
 if %errorlevel% neq 0 (
-    echo  [ERROR] No se pudo descargar Python. Instala desde python.org
+    echo  [ERROR] No se pudo crear el entorno virtual.
+    echo          Asegurate de tener Python 3.10 o superior instalado.
+    echo          Descarga Python desde: https://python.org
     pause
     exit /b 1
 )
-"%PYTHON_INSTALLER%" /quiet InstallAllUsers=1 PrependPath=1 Include_test=0
-del "%PYTHON_INSTALLER%" >nul 2>&1
-set "PYTHON_CMD=python"
-for /f "tokens=2*" %%a in ('reg query "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment" /v PATH 2^>nul') do set "PATH=%%b;%PATH%"
-echo  [OK] Python 3.12 instalado.
+
+echo         Actualizando pip dentro del entorno virtual...
+"%VENV_PY%" -m pip install --upgrade pip --quiet >> "%LOG_FILE%" 2>&1
+echo  [OK] Entorno virtual listo en: %VENV_DIR%
+goto :eof
+
+
+:: ============================================================
+:install_dependencies
+echo.
+echo  [5/7] Instalando dependencias en el entorno virtual...
+echo         (Esto puede tardar unos minutos la primera vez^)
+echo.
+
+for %%p in (pywebview cfdiclient openpyxl lxml schedule) do (
+    echo         Instalando %%p ...
+    "%VENV_PIP%" install %%p --quiet >> "%LOG_FILE%" 2>&1
+    if !errorlevel! equ 0 (
+        echo         [OK] %%p
+    ) else (
+        echo         [WARN] %%p - revisa el log: %LOG_FILE%
+    )
+)
+
+:: Verificar que cfdiclient tenga las clases correctas
+"%VENV_PY%" -c "from cfdiclient import Autenticacion, DescargaMasiva, Fiel, SolicitaDescarga, VerificaSolicitudDescarga" >nul 2>&1
+if %errorlevel% neq 0 (
+    echo.
+    echo  [WARN] cfdiclient no tiene todas las clases requeridas.
+    echo         Intentando reinstalar desde cero...
+    "%VENV_PIP%" install cfdiclient --force-reinstall --quiet >> "%LOG_FILE%" 2>&1
+    "%VENV_PY%" -c "from cfdiclient import Autenticacion, DescargaMasiva, Fiel, SolicitaDescarga, VerificaSolicitudDescarga" >nul 2>&1
+    if %errorlevel% neq 0 (
+        echo  [ERROR] cfdiclient sigue incompleto. Revisa: %LOG_FILE%
+    ) else (
+        echo  [OK] cfdiclient reinstalado correctamente.
+    )
+)
+
+echo.
+echo  [OK] Dependencias instaladas en el entorno virtual.
 goto :eof
 
 
 :: ============================================================
 :download_scripts
 echo.
-echo  [4/7] Descargando archivos desde GitHub...
+echo  [6/7] Descargando archivos desde GitHub...
 echo.
 set "DOWNLOAD_OK=1"
 
@@ -161,47 +248,28 @@ for %%s in ("%DL_DEST%") do (
         echo         [ERROR] Archivo invalido o 404: %DL_LABEL%
         set "DOWNLOAD_OK=0"
     ) else (
-        echo         [OK] %DL_LABEL% (%%~zs bytes)
+        echo         [OK] %DL_LABEL% (%%~zs bytes^)
     )
 )
-goto :eof
-
-
-:: ============================================================
-:install_dependencies
-echo.
-echo  [5/7] Instalando dependencias Python...
-for %%p in (pywebview cfdiclient openpyxl lxml schedule) do (
-    echo         %%p ...
-    %PYTHON_CMD% -m pip install %%p --quiet --upgrade >> "%LOG_FILE%" 2>&1
-    if !errorlevel! equ 0 (
-        echo         [OK] %%p
-    ) else (
-        echo         [WARN] %%p - ver log
-    )
-)
-echo  [OK] Dependencias instaladas.
 goto :eof
 
 
 :: ============================================================
 :register_task
 echo.
-echo  [6/7] Registrando tarea mensual automatica...
+echo  [7/7] Registrando tarea mensual y acceso directo...
 schtasks /Delete /TN "%TASK_NAME%" /F >nul 2>&1
 schtasks /Create /TN "%TASK_NAME%" /TR ""%INSTALL_DIR%\src\iniciar_contasat.bat"" /SC MONTHLY /D 1 /ST 08:00 /RU "%USERNAME%" /RL HIGHEST /F >nul 2>&1
 if %errorlevel% equ 0 (
-    echo  [OK] Tarea: dia 1 de cada mes a las 08:00
+    echo  [OK] Tarea programada: dia 1 de cada mes a las 08:00
 ) else (
-    echo  [WARN] No se pudo registrar la tarea. Configura manualmente.
+    echo  [WARN] No se pudo registrar la tarea automatica.
 )
 goto :eof
 
 
 :: ============================================================
 :create_shortcut
-echo.
-echo  [7/7] Creando acceso directo en el Escritorio...
 set "SHORTCUT=%USERPROFILE%\Desktop\ContaSAT.lnk"
 set "PS1=%TEMP%\cs_shortcut.ps1"
 (
@@ -239,11 +307,13 @@ if exist "%INSTALL_DIR%\src\contasat_gui.html"        echo  [OK] contasat_gui.ht
 if exist "%INSTALL_DIR%\src\descarga_cfdi_sat.py"     echo  [OK] descarga_cfdi_sat.py
 if exist "%INSTALL_DIR%\src\instalar_dependencias.py" echo  [OK] instalar_dependencias.py
 if exist "%INSTALL_DIR%\src\iniciar_contasat.bat"     echo  [OK] iniciar_contasat.bat
+if exist "%VENV_PY%"                                    echo  [OK] Entorno virtual Python (venv)
 echo.
 echo  -------------------------------------------------------
 echo  CONFIGURACION DEL SISTEMA
 echo  -------------------------------------------------------
 echo  Carpeta de instalacion : %INSTALL_DIR%
+echo  Entorno virtual        : %VENV_DIR%
 echo  Tarea automatica       : Dia 1 de cada mes - 08:00 hrs
 echo  Log de instalacion     : %LOG_FILE%
 echo  Repositorio            : %REPO_URL%
@@ -256,8 +326,7 @@ echo  1. Revisa que todos los archivos aparezcan como [OK].
 echo     Si alguno falla, ejecuta el instalador nuevamente.
 echo.
 echo  2. Abre ContaSAT desde el acceso directo del Escritorio.
-echo     Si hay algun error al abrir, la ventana mostrara
-echo     el mensaje exacto en lugar de cerrarse sola.
+echo     Si hay error, la ventana mostrara el mensaje exacto.
 echo.
 echo  3. En Configuracion escribe tu RFC.
 echo.

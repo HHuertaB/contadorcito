@@ -35,7 +35,7 @@ _verificar_deps()
 
 from flask import Flask, jsonify, request, send_file, send_from_directory
 from satcfdi.models import Signer
-from satcfdi.pacs.sat import SAT, TipoDescargaMasivaTerceros
+from satcfdi.pacs.sat import SAT, TipoDescargaMasivaTerceros, EstadoSolicitud
 import openpyxl
 from openpyxl.styles import Font, PatternFill
 
@@ -327,17 +327,69 @@ def _descarga_worker(inicio: str, fin: str, tipo_cfdi: str):
             carp_xml.mkdir(parents=True, exist_ok=True)
 
             _emit(f"Solicitando CFDIs {tipo.upper()} {fecha_ini} -> {fecha_fin}...", "info")
-            kwargs = dict(fecha_inicial=fecha_ini, fecha_final=fecha_fin,
-                          tipo_solicitud=TipoDescargaMasivaTerceros.CFDI)
-            if tipo == "recibidas": kwargs["rfc_receptor"] = _signer.rfc
-            else:                   kwargs["rfc_emisor"]   = _signer.rfc
 
+            # ── Paso 1: Solicitar ───────────────────────────────
+            kwargs = dict(
+                fecha_inicial  = fecha_ini,
+                fecha_final    = fecha_fin,
+                tipo_solicitud = TipoDescargaMasivaTerceros.CFDI,
+            )
+            if tipo == "recibidas":
+                resp = _sat.recover_comprobante_received_request(
+                    rfc_receptor=_signer.rfc, **kwargs)
+            else:
+                resp = _sat.recover_comprobante_emitted_request(
+                    rfc_emisor=_signer.rfc, **kwargs)
+
+            id_solicitud = resp.get("IdSolicitud")
+            cod = resp.get("CodEstatus", "")
+            _emit(f"ID solicitud: {id_solicitud} | Codigo: {cod}", "info")
+
+            if not id_solicitud:
+                _emit(f"El SAT no devolvio ID de solicitud: {resp}", "error")
+                continue
+
+            # ── Paso 2: Verificar hasta que este lista ──────────
+            _emit("Esperando que el SAT procese la solicitud...", "info")
+            paquetes = []
+            for intento in range(200):
+                import time; time.sleep(30 if intento > 0 else 5)
+                status = _sat.recover_comprobante_status(id_solicitud)
+                estado = status.get("EstadoSolicitud", "")
+                paquetes = status.get("IdsPaquetes", [])
+                _emit(f"Intento {intento+1}: estado={estado} paquetes={len(paquetes)}", "info")
+
+                if str(estado) == str(EstadoSolicitud.TERMINADA) or estado == "3":
+                    _emit(f"Solicitud lista. {len(paquetes)} paquete(s) disponibles.", "ok")
+                    break
+                elif str(estado) == "5":
+                    _emit("Sin CFDIs en el periodo indicado.", "warn")
+                    paquetes = []
+                    break
+                elif str(estado) in ["1", "2"]:
+                    _progreso = int((paso + 0.3) / len(tipos) * 80)
+                    continue
+                else:
+                    _emit(f"Error del SAT: estado={estado} codigo={status.get('CodEstatus','')}", "error")
+                    paquetes = []
+                    break
+
+            # ── Paso 3: Descargar paquetes ──────────────────────
             n = 0
-            for paquete_id, data in _sat.recover_comprobante_iwait(**kwargs):
-                n += 1
-                _emit(f"Paquete {paquete_id} descargado.", "info")
-                ruta_zip = carp_zip / f"{paquete_id}.zip"
+            for i, id_paquete in enumerate(paquetes):
+                _emit(f"Descargando paquete {i+1}/{len(paquetes)}: {id_paquete}", "info")
+                resp_dl, contenido_b64 = _sat.recover_comprobante_download(
+                    id_paquete=id_paquete)
+
+                if not contenido_b64:
+                    _emit(f"Paquete vacio: {id_paquete}", "warn")
+                    continue
+
+                data = base64.b64decode(contenido_b64)
+                ruta_zip = carp_zip / f"{id_paquete}.zip"
                 ruta_zip.write_bytes(data)
+                n += 1
+
                 with zipfile.ZipFile(ruta_zip) as z:
                     for nombre in [x for x in z.namelist() if x.lower().endswith(".xml")]:
                         contenido = z.read(nombre)
@@ -350,12 +402,13 @@ def _descarga_worker(inicio: str, fin: str, tipo_cfdi: str):
                             if uuid in uuids: overwr += 1
                             else: uuids.add(uuid); nuevos += 1
                         todos.append(cfdi)
-                _progreso = int((paso + min(n * 0.1, 0.9)) / len(tipos) * 90)
 
-            if n == 0:
-                _emit(f"Sin CFDIs {tipo.upper()} en el periodo.", "warn")
-            else:
-                _emit(f"{tipo.upper()}: {n} paquetes OK.", "ok")
+                _progreso = int((paso + 0.6 + i / max(len(paquetes), 1) * 0.4) / len(tipos) * 90)
+
+            if n == 0 and paquetes:
+                _emit(f"No se pudo descargar ningun paquete de {tipo.upper()}.", "warn")
+            elif n > 0:
+                _emit(f"{tipo.upper()}: {n} paquete(s) descargados.", "ok")
 
         if todos:
             _emit("Generando reporte Excel...", "info")
@@ -372,8 +425,10 @@ def _descarga_worker(inicio: str, fin: str, tipo_cfdi: str):
         _save_hist(hist)
         _progreso = 100
         _emit(f"COMPLETADO: {len(todos)} CFDIs | {nuevos} nuevos | {overwr} overwrite", "ok")
+
     except Exception as e:
-        _emit(f"Error: {e}", "error")
+        _emit(f"Error inesperado: {e}", "error")
+        log.exception("Error en descarga worker")
     finally:
         _descargando = False
 

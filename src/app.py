@@ -61,9 +61,11 @@ log = logging.getLogger("contasat")
 # ── Configuración por defecto ─────────────────────────────────
 CFG_DEFAULT = {
     "rfc": "",
-    "fiel_cer": "",
-    "fiel_key": "",
-    "fiel_password": "",
+    "fiel_cer": "",         # ruta completa al .cer (no es dato sensible)
+    "fiel_key": "",         # ruta completa al .key (no es dato sensible)
+    "fiel_cer_nombre": "",  # nombre del archivo, para mostrar en la GUI
+    "fiel_key_nombre": "",  # nombre del archivo, para mostrar en la GUI
+    # fiel_password NUNCA se guarda en disco
     "notif_email": "",
     "notif_cc": "",
     "dia_auto": 1,
@@ -207,27 +209,91 @@ class ContaSATAPI:
     #  e.FIRMA
     # ─────────────────────────────────────────────────────────
 
-    def cargar_fiel(self, cer_b64: str, key_b64: str, password: str) -> dict:
+    def cargar_fiel(self, cer_b64: str, key_b64: str, password: str,
+                    cer_nombre: str = "", key_nombre: str = "",
+                    cer_ruta: str = "", key_ruta: str = "") -> dict:
         """
-        Recibe los archivos .cer y .key como base64 desde la GUI
-        (FileReader API), los carga en memoria y valida con el SAT.
+        Carga la e.firma en memoria y valida contra el SAT.
+
+        Acepta dos modos:
+        - cer_b64 / key_b64: archivos enviados como base64 desde el drag & drop de la GUI.
+        - cer_ruta / key_ruta: rutas absolutas en disco (cuando el usuario ya las tenía guardadas).
+
+        Las rutas (no la contraseña) se guardan en config.json para
+        precargar la GUI en la próxima sesión.
         """
         try:
-            cer = base64.b64decode(cer_b64)
-            key = base64.b64decode(key_b64)
+            # Modo ruta en disco: leer directamente del archivo
+            if cer_ruta and key_ruta and not cer_b64:
+                cer_path = Path(cer_ruta)
+                key_path = Path(key_ruta)
+                if not cer_path.exists():
+                    return {"ok": False, "msg": f"No se encontró el archivo: {cer_path.name}"}
+                if not key_path.exists():
+                    return {"ok": False, "msg": f"No se encontró el archivo: {key_path.name}"}
+                cer = cer_path.read_bytes()
+                key = key_path.read_bytes()
+                cer_nombre = cer_nombre or cer_path.name
+                key_nombre = key_nombre or key_path.name
+            else:
+                # Modo base64 desde la GUI (drag & drop o selector de archivo)
+                if not cer_b64 or not key_b64:
+                    return {"ok": False, "msg": "Carga los archivos .cer y .key primero."}
+                cer = base64.b64decode(cer_b64)
+                key = base64.b64decode(key_b64)
+
             self._fiel = Fiel(cer, key, password)
-            # Prueba de token para validar
+
+            # Validar con el SAT obteniendo un token de prueba
             token = Autenticacion(self._fiel).obtener_token()
             if not token:
                 self._fiel = None
                 return {"ok": False, "msg": "e.firma inválida o contraseña incorrecta."}
-            return {"ok": True, "msg": "e.firma válida. Token obtenido del SAT."}
+
+            # Guardar rutas en config (nunca la contraseña)
+            cfg = _load_cfg()
+            if cer_ruta: cfg["fiel_cer"] = cer_ruta
+            if key_ruta: cfg["fiel_key"] = key_ruta
+            cfg["fiel_cer_nombre"] = cer_nombre
+            cfg["fiel_key_nombre"] = key_nombre
+            _save_cfg(cfg)
+
+            return {
+                "ok":         True,
+                "msg":        "e.firma válida. Token obtenido del SAT.",
+                "cer_nombre": cer_nombre,
+                "key_nombre": key_nombre,
+            }
         except Exception as e:
             self._fiel = None
-            return {"ok": False, "msg": f"Error: {str(e)}"}
+            return {"ok": False, "msg": f"Error al cargar e.firma: {str(e)}"}
 
     def get_fiel_status(self) -> dict:
-        return {"cargada": self._fiel is not None}
+        """Devuelve si la FIEL está cargada y los nombres de archivo recordados."""
+        cfg = _load_cfg()
+        return {
+            "cargada":     self._fiel is not None,
+            "cer_nombre":  cfg.get("fiel_cer_nombre", ""),
+            "key_nombre":  cfg.get("fiel_key_nombre", ""),
+            "cer_ruta":    cfg.get("fiel_cer", ""),
+            "key_ruta":    cfg.get("fiel_key", ""),
+            "tiene_rutas": bool(cfg.get("fiel_cer") and cfg.get("fiel_key")),
+        }
+
+    def cargar_fiel_desde_rutas_guardadas(self, password: str) -> dict:
+        """
+        Shortcut para cuando la GUI ya tiene las rutas guardadas.
+        El usuario solo introduce la contraseña y se llama este método.
+        """
+        cfg = _load_cfg()
+        cer_ruta = cfg.get("fiel_cer", "")
+        key_ruta = cfg.get("fiel_key", "")
+        if not cer_ruta or not key_ruta:
+            return {"ok": False, "msg": "No hay rutas de e.firma guardadas. Carga los archivos manualmente."}
+        return self.cargar_fiel(
+            cer_b64="", key_b64="", password=password,
+            cer_ruta=cer_ruta, key_ruta=key_ruta,
+        )
 
     # ─────────────────────────────────────────────────────────
     #  HISTORIAL Y RANGO INTELIGENTE

@@ -1177,40 +1177,66 @@ tbody td.mono { font-family: var(--font-mono); font-size: 11px; }
                 <div class="card-title-icon icon-emerald">🔑</div>
                 e.firma (FIEL)
               </div>
-              <span class="badge badge-green" id="fiel-status">✓ Cargada</span>
+              <span class="badge badge-red" id="fiel-status">No cargada</span>
             </div>
 
-            <div class="form-grid">
-              <div class="field">
-                <label>Certificado (.cer)</label>
-                <div class="drop-zone" id="drop-cer" ondragover="dragOver(event,'drop-cer')" ondragleave="dragLeave('drop-cer')" ondrop="dropFile(event,'drop-cer','cer-name')">
-                  <input type="file" accept=".cer" onchange="fileSelected(this,'cer-name','drop-cer')"/>
-                  <div class="drop-icon">📜</div>
-                  <div class="drop-title">Arrastra tu .cer aquí</div>
-                  <div class="drop-sub">o haz clic para seleccionar</div>
-                  <div class="file-badge" id="cer-name" style="display:none"></div>
+            <!-- Vista simplificada: rutas ya recordadas, solo pide contraseña -->
+            <div id="fiel-modo-recordado" style="display:none">
+              <div style="background:var(--emerald-dim);border:1px solid #00c27a33;border-radius:var(--radius-sm);padding:14px 16px;margin-bottom:14px">
+                <div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;font-weight:700">Archivos recordados de la sesión anterior</div>
+                <div style="display:flex;gap:10px;flex-wrap:wrap">
+                  <span class="file-badge" id="cer-name-rec" style="display:none"></span>
+                  <span class="file-badge" id="key-name-rec" style="display:none"></span>
+                </div>
+              </div>
+              <div class="form-grid" style="grid-template-columns:1fr auto;align-items:end;gap:10px">
+                <div class="field">
+                  <label>Contraseña de la e.firma</label>
+                  <input type="password" id="fiel-pass-rec" placeholder="••••••••••••" onkeydown="if(event.key==='Enter')validarFielRecordada()"/>
+                  <span class="hint">Solo se pide la contraseña — los archivos ya están guardados</span>
+                </div>
+                <button class="btn btn-primary" onclick="validarFielRecordada()" style="white-space:nowrap">🔒 Validar</button>
+              </div>
+              <div style="margin-top:12px">
+                <button class="btn btn-secondary btn-sm" onclick="mostrarModoCompleto()">Cambiar archivos de e.firma</button>
+              </div>
+            </div>
+
+            <!-- Vista completa: primera vez o cambio de archivos -->
+            <div id="fiel-modo-completo">
+              <div class="form-grid">
+                <div class="field">
+                  <label>Certificado (.cer)</label>
+                  <div class="drop-zone" id="drop-cer" ondragover="dragOver(event,'drop-cer')" ondragleave="dragLeave('drop-cer')" ondrop="dropFile(event,'drop-cer','cer-name')">
+                    <input type="file" accept=".cer" onchange="fileSelected(this,'cer-name','drop-cer')"/>
+                    <div class="drop-icon">📜</div>
+                    <div class="drop-title">Arrastra tu .cer aquí</div>
+                    <div class="drop-sub">o haz clic para seleccionar</div>
+                    <div class="file-badge" id="cer-name" style="display:none"></div>
+                  </div>
+                </div>
+
+                <div class="field">
+                  <label>Llave privada (.key)</label>
+                  <div class="drop-zone" id="drop-key" ondragover="dragOver(event,'drop-key')" ondragleave="dragLeave('drop-key')" ondrop="dropFile(event,'drop-key','key-name')">
+                    <input type="file" accept=".key" onchange="fileSelected(this,'key-name','drop-key')"/>
+                    <div class="drop-icon">🗝️</div>
+                    <div class="drop-title">Arrastra tu .key aquí</div>
+                    <div class="drop-sub">o haz clic para seleccionar</div>
+                    <div class="file-badge" id="key-name" style="display:none"></div>
+                  </div>
                 </div>
               </div>
 
-              <div class="field">
-                <label>Llave privada (.key)</label>
-                <div class="drop-zone" id="drop-key" ondragover="dragOver(event,'drop-key')" ondragleave="dragLeave('drop-key')" ondrop="dropFile(event,'drop-key','key-name')">
-                  <input type="file" accept=".key" onchange="fileSelected(this,'key-name','drop-key')"/>
-                  <div class="drop-icon">🗝️</div>
-                  <div class="drop-title">Arrastra tu .key aquí</div>
-                  <div class="drop-sub">o haz clic para seleccionar</div>
-                  <div class="file-badge" id="key-name" style="display:none"></div>
+              <div class="form-grid" style="margin-top:14px">
+                <div class="field">
+                  <label>Contraseña de la e.firma</label>
+                  <input type="password" id="fiel-pass" placeholder="••••••••••••" onkeydown="if(event.key==='Enter')validarFiel()"/>
+                  <span class="hint">La contraseña no se guarda en disco</span>
                 </div>
-              </div>
-            </div>
-
-            <div class="form-grid" style="margin-top:14px">
-              <div class="field">
-                <label>Contraseña de la e.firma</label>
-                <input type="password" id="fiel-pass" placeholder="••••••••••••" />
-              </div>
-              <div class="field" style="justify-content:flex-end;padding-top:20px">
-                <button class="btn btn-secondary" onclick="validarFiel()">🔒 Validar e.firma</button>
+                <div class="field" style="justify-content:flex-end;padding-top:20px">
+                  <button class="btn btn-secondary" onclick="validarFiel()">🔒 Validar e.firma</button>
+                </div>
               </div>
             </div>
           </div>
@@ -1847,17 +1873,141 @@ function dropFile(e, zoneId, badgeId) {
   }
 }
 
-// ══════════════════════════════════════
-//  VALIDAR e.FIRMA
-// ══════════════════════════════════════
-function validarFiel() {
-  showToast('🔑 Validando e.firma con el SAT...', 'info');
-  setTimeout(() => {
-    document.getElementById('fiel-status').className = 'badge badge-green';
-    document.getElementById('fiel-status').textContent = '✓ Válida';
-    showToast('e.firma validada correctamente', 'success');
-  }, 1800);
+// ══════════════════════════════════════════════════════
+//  e.FIRMA — lógica completa con rutas recordadas
+// ══════════════════════════════════════════════════════
+
+// Estado en memoria de los archivos seleccionados
+const _fiel = { cerB64: null, keyB64: null, cerNombre: '', keyNombre: '' };
+
+// Llamado al iniciar la página: verifica si hay rutas guardadas
+async function inicializarFiel() {
+  if (!window.pywebview) return; // modo navegador, sin API
+  const status = await new Promise(resolve =>
+    window.addEventListener('pywebviewready', async () =>
+      resolve(await window.pywebview.api.get_fiel_status()), { once: true })
+  );
+  if (status && status.tiene_rutas) {
+    // Hay rutas guardadas: mostrar vista simplificada
+    mostrarModoRecordado(status.cer_nombre, status.key_nombre);
+  }
+  // Si ya estaba cargada en esta sesión (no debería ocurrir en arranque)
+  if (status && status.cargada) actualizarEstadoFiel(true);
 }
+
+function mostrarModoRecordado(cerNombre, keyNombre) {
+  document.getElementById('fiel-modo-recordado').style.display = 'block';
+  document.getElementById('fiel-modo-completo').style.display  = 'none';
+  if (cerNombre) {
+    const t = document.getElementById('cer-name-rec');
+    t.textContent = '📎 ' + cerNombre;
+    t.style.display = 'inline-flex';
+  }
+  if (keyNombre) {
+    const t = document.getElementById('key-name-rec');
+    t.textContent = '📎 ' + keyNombre;
+    t.style.display = 'inline-flex';
+  }
+  // Poner foco en el campo de contraseña
+  setTimeout(() => document.getElementById('fiel-pass-rec')?.focus(), 200);
+}
+
+function mostrarModoCompleto() {
+  document.getElementById('fiel-modo-recordado').style.display = 'none';
+  document.getElementById('fiel-modo-completo').style.display  = 'block';
+}
+
+function actualizarEstadoFiel(valida) {
+  const badge = document.getElementById('fiel-status');
+  const dot   = document.getElementById('fiel-dot');
+  const txt   = document.getElementById('fiel-status-txt');
+  if (valida) {
+    badge.className = 'badge badge-green';
+    badge.textContent = '✓ Válida';
+    if (dot) { dot.style.background = 'var(--emerald)'; dot.style.boxShadow = '0 0 6px var(--emerald)'; }
+    if (txt) txt.textContent = 'e.firma válida';
+  } else {
+    badge.className = 'badge badge-red';
+    badge.textContent = '✗ No cargada';
+    if (dot) { dot.style.background = 'var(--text-3)'; dot.style.boxShadow = 'none'; }
+    if (txt) txt.textContent = 'e.firma no cargada';
+  }
+}
+
+// Validar usando archivos cargados via drag & drop (primera vez)
+async function validarFiel() {
+  const pass = document.getElementById('fiel-pass').value;
+  if (!pass) { showToast('Escribe la contraseña de tu e.firma.', 'error'); return; }
+  if (!_fiel.cerB64 || !_fiel.keyB64) { showToast('Carga los archivos .cer y .key primero.', 'error'); return; }
+
+  showToast('Validando e.firma con el SAT...', 'info');
+
+  if (!window.pywebview) {
+    // Stub para desarrollo en navegador
+    setTimeout(() => { actualizarEstadoFiel(true); showToast('e.firma válida (modo demo)', 'success'); }, 1200);
+    return;
+  }
+
+  const r = await window.pywebview.api.cargar_fiel({
+    cer_b64:    _fiel.cerB64,
+    key_b64:    _fiel.keyB64,
+    password:   pass,
+    cer_nombre: _fiel.cerNombre,
+    key_nombre: _fiel.keyNombre,
+  });
+
+  if (r.ok) {
+    actualizarEstadoFiel(true);
+    showToast(r.msg, 'success');
+    // Tras validar correctamente, cambiar a vista simplificada
+    // para que en la próxima sesión solo pida contraseña
+    mostrarModoRecordado(r.cer_nombre || _fiel.cerNombre, r.key_nombre || _fiel.keyNombre);
+  } else {
+    actualizarEstadoFiel(false);
+    showToast(r.msg, 'error');
+  }
+}
+
+// Validar usando rutas ya guardadas — solo pide contraseña
+async function validarFielRecordada() {
+  const pass = document.getElementById('fiel-pass-rec').value;
+  if (!pass) { showToast('Escribe la contraseña de tu e.firma.', 'error'); return; }
+
+  showToast('Validando e.firma con el SAT...', 'info');
+
+  if (!window.pywebview) {
+    setTimeout(() => { actualizarEstadoFiel(true); showToast('e.firma válida (modo demo)', 'success'); }, 1200);
+    return;
+  }
+
+  const r = await window.pywebview.api.cargar_fiel_desde_rutas_guardadas({ password: pass });
+
+  if (r.ok) {
+    actualizarEstadoFiel(true);
+    showToast(r.msg, 'success');
+  } else {
+    actualizarEstadoFiel(false);
+    showToast(r.msg, 'error');
+  }
+}
+
+// Captura el contenido del archivo cuando el usuario lo selecciona
+function fileSelected(input, badgeId, zoneId) {
+  const f = input.files[0];
+  if (!f) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const b64 = e.target.result.split(',')[1];
+    if (zoneId === 'drop-cer') { _fiel.cerB64 = b64; _fiel.cerNombre = f.name; }
+    if (zoneId === 'drop-key') { _fiel.keyB64 = b64; _fiel.keyNombre = f.name; }
+  };
+  reader.readAsDataURL(f);
+  const badge = document.getElementById(badgeId);
+  badge.textContent = '📎 ' + f.name;
+  badge.style.display = 'inline-flex';
+  document.getElementById(zoneId).style.borderColor = 'var(--emerald)';
+}
+
 
 // ══════════════════════════════════════
 //  INICIAR DESCARGA (simulación visual)
@@ -1969,6 +2119,9 @@ function showToast(msg, type = 'info') {
 
 // Fecha actual en campos date
 document.getElementById('fecha-fin').value = new Date().toISOString().slice(0,10);
+
+// Inicializar e.firma al arrancar (detecta rutas guardadas)
+window.addEventListener('pywebviewready', inicializarFiel);
 </script>
 
 <script>

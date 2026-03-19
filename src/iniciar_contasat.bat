@@ -22,35 +22,41 @@ if not defined PYTHON (
     exit /b 1
 )
 
-:: Verificar app.py
+:: Verificar que app.py exista
 if not exist "%~dp0app.py" (
-    echo  [ERROR] No se encontro app.py en:
-    echo          %~dp0
+    echo  [ERROR] No se encontro app.py
     echo          Ejecuta instalar_contasat.bat nuevamente.
     pause
     exit /b 1
 )
 
-:: Verificar e instalar dependencias si faltan
-echo  Verificando dependencias...
+:: Verificar cfdiclient
+echo  Verificando cfdiclient...
 %PYTHON% -c "from cfdiclient import Autenticacion, DescargaMasiva, Fiel, SolicitaDescarga, VerificaSolicitudDescarga" >nul 2>&1
 if %errorlevel% neq 0 (
-    echo  [INFO] Actualizando cfdiclient a la version mas reciente...
-    %PYTHON% -m pip install "cfdiclient>=1.5.9" --upgrade --quiet
+    echo  [INFO] Actualizando cfdiclient...
+    %PYTHON% -m pip install cfdiclient --upgrade --quiet
+    %PYTHON% -c "from cfdiclient import Autenticacion, DescargaMasiva, Fiel, SolicitaDescarga, VerificaSolicitudDescarga" >nul 2>&1
     if %errorlevel% neq 0 (
-        echo  [ERROR] No se pudo instalar cfdiclient.
-        echo          Verifica tu conexion a internet.
+        echo  [ERROR] cfdiclient no se pudo actualizar.
+        echo.
+        echo  Ejecuta en una terminal con permisos de administrador:
+        echo    pip install cfdiclient --upgrade --force-reinstall
+        echo.
         pause
         exit /b 1
     )
+    echo  [OK] cfdiclient actualizado.
 )
 
+:: Verificar pywebview
 %PYTHON% -c "import webview" >nul 2>&1
 if %errorlevel% neq 0 (
     echo  [INFO] Instalando pywebview...
     %PYTHON% -m pip install pywebview --quiet
 )
 
+:: Verificar openpyxl
 %PYTHON% -c "import openpyxl" >nul 2>&1
 if %errorlevel% neq 0 (
     echo  [INFO] Instalando openpyxl...
@@ -70,14 +76,14 @@ if %errorlevel% neq 0 (
     echo  [ERROR] ContaSAT cerro con un error (codigo: %errorlevel%)
     echo  -------------------------------------------------------
     echo.
-    echo  Informacion de diagnostico:
+    echo  Diagnostico:
     %PYTHON% --version
-    %PYTHON% -c "import cfdiclient; print('cfdiclient: OK')" 2>&1
-    %PYTHON% -c "import webview; print('pywebview: OK')" 2>&1
+    %PYTHON% -c "import cfdiclient; print('cfdiclient OK')" 2>&1
+    %PYTHON% -c "import webview; print('pywebview OK')" 2>&1
     echo.
     echo  Si el problema persiste:
     echo  1. Ejecuta instalar_contasat.bat nuevamente
-    echo  2. Revisa el log en: ..\contabilidad_sat\descarga_sat.log
+    echo  2. Revisa el log: ..\contabilidad_sat\descarga_sat.log
     echo.
     pause
 )

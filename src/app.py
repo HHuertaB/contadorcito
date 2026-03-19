@@ -25,7 +25,7 @@ def _pip(pkg, upgrade=False):
     subprocess.check_call(cmd)
 
 # Instalar paquetes base si no existen
-for _p, _pkg in [("webview", "pywebview"), ("cfdiclient", "cfdiclient>=1.5.9"),
+for _p, _pkg in [("webview", "pywebview"), ("cfdiclient", "cfdiclient"),
                   ("openpyxl", "openpyxl"), ("lxml", "lxml"), ("schedule", "schedule")]:
     try:
         __import__(_p)
@@ -42,7 +42,7 @@ try:
     )
 except ImportError as e:
     print(f"[INFO] cfdiclient incompleto ({e}). Actualizando...")
-    _pip("cfdiclient>=1.5.9", upgrade=True)
+    _pip("cfdiclient", upgrade=True)
     try:
         from cfdiclient import (
             Autenticacion, DescargaMasiva, Fiel,

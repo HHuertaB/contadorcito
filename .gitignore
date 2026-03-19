@@ -1,0 +1,33 @@
+# ── e.firma — NUNCA subir al repositorio ────────────────────
+*.cer
+*.key
+efirma/
+
+# ── Datos de contabilidad personal ──────────────────────────
+contabilidad_sat/
+historial_descargas.json
+config.ini
+
+# ── Logs ────────────────────────────────────────────────────
+*.log
+logs/
+
+# ── Python ──────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.env
+
+# ── Sistema operativo ────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Temporales ───────────────────────────────────────────────
+*.tmp
+*.zip
+zips/

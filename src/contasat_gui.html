@@ -1,0 +1,1974 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>ContaSAT — Gestión de CFDIs</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
+<style>
+/* ═══════════════════════════════════════════════
+   TOKENS DE DISEÑO
+═══════════════════════════════════════════════ */
+:root {
+  --bg:          #0d1117;
+  --bg2:         #161b24;
+  --bg3:         #1e2533;
+  --border:      #2a3347;
+  --border2:     #374160;
+  --emerald:     #00c27a;
+  --emerald-dim: #00c27a22;
+  --gold:        #e8c44a;
+  --gold-dim:    #e8c44a18;
+  --red:         #ff5f5f;
+  --red-dim:     #ff5f5f1a;
+  --blue:        #4d9fff;
+  --blue-dim:    #4d9fff18;
+  --text:        #e8eaf0;
+  --text-2:      #8b95a8;
+  --text-3:      #4f5b72;
+  --font-display:"DM Serif Display", serif;
+  --font-body:   "Outfit", sans-serif;
+  --font-mono:   "DM Mono", monospace;
+  --radius:      12px;
+  --radius-sm:   8px;
+  --shadow:      0 4px 24px #00000044;
+  --shadow-lg:   0 12px 48px #00000066;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: var(--font-body);
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  display: flex;
+  overflow: hidden;
+}
+
+/* ═══════════════════════════════════════════════
+   SIDEBAR
+═══════════════════════════════════════════════ */
+.sidebar {
+  width: 240px;
+  min-height: 100vh;
+  background: var(--bg2);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  padding: 0 0 24px;
+  position: relative;
+  z-index: 10;
+}
+
+.sidebar-logo {
+  padding: 28px 24px 24px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 16px;
+}
+
+.logo-mark {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.logo-icon {
+  width: 36px; height: 36px;
+  background: linear-gradient(135deg, var(--emerald), #00997f);
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px;
+}
+
+.logo-text {
+  font-family: var(--font-display);
+  font-size: 20px;
+  color: var(--text);
+  letter-spacing: -0.3px;
+}
+
+.logo-sub {
+  font-size: 10px;
+  color: var(--text-3);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  margin-top: 4px;
+  font-weight: 500;
+}
+
+.nav-section {
+  padding: 0 12px;
+  margin-bottom: 4px;
+}
+
+.nav-label {
+  font-size: 9px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--text-3);
+  font-weight: 600;
+  padding: 12px 12px 6px;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--text-2);
+  transition: all .18s ease;
+  position: relative;
+}
+
+.nav-item:hover { background: var(--bg3); color: var(--text); }
+
+.nav-item.active {
+  background: var(--emerald-dim);
+  color: var(--emerald);
+}
+
+.nav-item.active::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 20%; height: 60%;
+  width: 3px;
+  background: var(--emerald);
+  border-radius: 0 3px 3px 0;
+}
+
+.nav-icon { width: 16px; text-align: center; font-size: 15px; }
+
+.nav-badge {
+  margin-left: auto;
+  background: var(--emerald);
+  color: #000;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 20px;
+}
+
+.sidebar-footer {
+  margin-top: auto;
+  padding: 16px 24px 0;
+  border-top: 1px solid var(--border);
+}
+
+.rfc-chip {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+.rfc-chip .rfc-label {
+  font-size: 9px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin-bottom: 3px;
+}
+
+.rfc-chip .rfc-value { color: var(--gold); font-size: 13px; }
+
+/* ═══════════════════════════════════════════════
+   MAIN
+═══════════════════════════════════════════════ */
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.topbar {
+  height: 60px;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 28px;
+  gap: 16px;
+  flex-shrink: 0;
+}
+
+.topbar-title {
+  font-family: var(--font-display);
+  font-size: 22px;
+  flex: 1;
+}
+
+.topbar-title span { color: var(--emerald); font-style: italic; }
+
+.status-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 5px 12px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.status-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--emerald);
+  box-shadow: 0 0 6px var(--emerald);
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .4; }
+}
+
+.content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 28px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border2) transparent;
+}
+
+/* ═══════════════════════════════════════════════
+   PÁGINAS
+═══════════════════════════════════════════════ */
+.page { display: none; animation: fadeIn .25s ease; }
+.page.active { display: block; }
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ═══════════════════════════════════════════════
+   CARDS
+═══════════════════════════════════════════════ */
+.card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px;
+  margin-bottom: 20px;
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.card-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.card-title-icon {
+  width: 28px; height: 28px;
+  border-radius: 7px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px;
+}
+
+.icon-emerald { background: var(--emerald-dim); }
+.icon-gold    { background: var(--gold-dim); }
+.icon-blue    { background: var(--blue-dim); }
+.icon-red     { background: var(--red-dim); }
+
+/* ═══════════════════════════════════════════════
+   MÉTRICAS
+═══════════════════════════════════════════════ */
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.metric-card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  position: relative;
+  overflow: hidden;
+  transition: border-color .2s;
+}
+
+.metric-card:hover { border-color: var(--border2); }
+
+.metric-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+}
+
+.metric-card.green::before  { background: var(--emerald); }
+.metric-card.gold::before   { background: var(--gold); }
+.metric-card.blue::before   { background: var(--blue); }
+.metric-card.red::before    { background: var(--red); }
+
+.metric-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: var(--text-3);
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.metric-value {
+  font-family: var(--font-display);
+  font-size: 28px;
+  line-height: 1;
+  margin-bottom: 6px;
+}
+
+.metric-value.green { color: var(--emerald); }
+.metric-value.gold  { color: var(--gold); }
+.metric-value.blue  { color: var(--blue); }
+.metric-value.red   { color: var(--red); }
+
+.metric-sub {
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.metric-icon {
+  position: absolute;
+  right: 16px; top: 16px;
+  font-size: 28px;
+  opacity: .12;
+}
+
+/* ═══════════════════════════════════════════════
+   FORMULARIOS
+═══════════════════════════════════════════════ */
+.form-grid {
+  display: grid;
+  gap: 16px;
+}
+
+.form-grid-2 { grid-template-columns: 1fr 1fr; }
+.form-grid-3 { grid-template-columns: 1fr 1fr 1fr; }
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.field input, .field select, .field textarea {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 14px;
+  padding: 10px 14px;
+  outline: none;
+  transition: border-color .18s;
+  width: 100%;
+}
+
+.field input:focus, .field select:focus, .field textarea:focus {
+  border-color: var(--emerald);
+  box-shadow: 0 0 0 3px var(--emerald-dim);
+}
+
+.field input[type="date"] { color-scheme: dark; }
+
+.field .hint {
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+/* ═══════════════════════════════════════════════
+   FILE DROP ZONE
+═══════════════════════════════════════════════ */
+.drop-zone {
+  border: 2px dashed var(--border2);
+  border-radius: var(--radius);
+  padding: 32px 24px;
+  text-align: center;
+  cursor: pointer;
+  transition: all .2s;
+  position: relative;
+}
+
+.drop-zone:hover, .drop-zone.drag-over {
+  border-color: var(--emerald);
+  background: var(--emerald-dim);
+}
+
+.drop-icon {
+  font-size: 36px;
+  margin-bottom: 10px;
+}
+
+.drop-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.drop-sub {
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.drop-zone input[type="file"] {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+  width: 100%;
+  height: 100%;
+}
+
+.file-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--emerald-dim);
+  border: 1px solid var(--emerald);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--emerald);
+  margin-top: 10px;
+  font-family: var(--font-mono);
+}
+
+/* ═══════════════════════════════════════════════
+   BOTONES
+═══════════════════════════════════════════════ */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-body);
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  transition: all .18s;
+}
+
+.btn-primary {
+  background: var(--emerald);
+  color: #000;
+}
+.btn-primary:hover { background: #00d988; transform: translateY(-1px); box-shadow: 0 6px 20px #00c27a44; }
+
+.btn-secondary {
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  color: var(--text);
+}
+.btn-secondary:hover { background: var(--bg3); border-color: var(--text-2); }
+
+.btn-gold {
+  background: var(--gold);
+  color: #000;
+}
+.btn-gold:hover { background: #f0d05c; transform: translateY(-1px); }
+
+.btn-danger {
+  background: var(--red-dim);
+  border: 1px solid var(--red);
+  color: var(--red);
+}
+
+.btn-lg { padding: 13px 28px; font-size: 15px; }
+.btn-sm { padding: 6px 14px; font-size: 12px; }
+
+.btn:disabled { opacity: .4; cursor: not-allowed; transform: none !important; }
+
+/* ═══════════════════════════════════════════════
+   TABS
+═══════════════════════════════════════════════ */
+.tabs {
+  display: flex;
+  gap: 4px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 4px;
+  margin-bottom: 20px;
+  width: fit-content;
+}
+
+.tab {
+  padding: 7px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  color: var(--text-2);
+  transition: all .18s;
+  border: none;
+  background: none;
+}
+
+.tab.active {
+  background: var(--bg2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+}
+
+/* ═══════════════════════════════════════════════
+   TABLA
+═══════════════════════════════════════════════ */
+.table-wrap {
+  overflow-x: auto;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+thead th {
+  background: var(--bg3);
+  color: var(--text-3);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  padding: 10px 14px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+tbody tr {
+  border-bottom: 1px solid var(--border);
+  transition: background .12s;
+}
+
+tbody tr:last-child { border-bottom: none; }
+tbody tr:hover { background: var(--bg3); }
+
+tbody td {
+  padding: 11px 14px;
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+tbody td.mono { font-family: var(--font-mono); font-size: 11px; }
+
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .5px;
+}
+
+.badge-green  { background: var(--emerald-dim); color: var(--emerald); border: 1px solid #00c27a33; }
+.badge-gold   { background: var(--gold-dim);    color: var(--gold);    border: 1px solid #e8c44a33; }
+.badge-blue   { background: var(--blue-dim);    color: var(--blue);    border: 1px solid #4d9fff33; }
+.badge-red    { background: var(--red-dim);     color: var(--red);     border: 1px solid #ff5f5f33; }
+
+/* ═══════════════════════════════════════════════
+   PROGRESS / LOG DESCARGA
+═══════════════════════════════════════════════ */
+.download-log {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 16px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  max-height: 220px;
+  overflow-y: auto;
+  line-height: 1.7;
+  color: var(--text-3);
+}
+
+.log-line.ok     { color: var(--emerald); }
+.log-line.warn   { color: var(--gold); }
+.log-line.error  { color: var(--red); }
+.log-line.info   { color: var(--blue); }
+
+.progress-bar-wrap {
+  background: var(--bg3);
+  border-radius: 20px;
+  height: 6px;
+  overflow: hidden;
+  margin: 12px 0;
+}
+
+.progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, var(--emerald), #00997f);
+  border-radius: 20px;
+  transition: width .5s ease;
+  position: relative;
+}
+
+.progress-bar::after {
+  content: '';
+  position: absolute;
+  right: 0; top: 0; bottom: 0;
+  width: 40px;
+  background: linear-gradient(90deg, transparent, #00c27a88);
+  animation: shimmer 1.2s infinite;
+}
+
+@keyframes shimmer {
+  0%   { opacity: 0; }
+  50%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* ═══════════════════════════════════════════════
+   TIMELINE (historial)
+═══════════════════════════════════════════════ */
+.timeline { position: relative; }
+
+.timeline::before {
+  content: '';
+  position: absolute;
+  left: 16px; top: 0; bottom: 0;
+  width: 1px;
+  background: var(--border);
+}
+
+.timeline-item {
+  display: flex;
+  gap: 20px;
+  padding: 0 0 24px 0;
+  position: relative;
+}
+
+.timeline-dot {
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 1;
+}
+
+.timeline-dot.success { background: var(--emerald-dim); border: 2px solid var(--emerald); }
+.timeline-dot.warn    { background: var(--gold-dim);    border: 2px solid var(--gold); }
+
+.timeline-content { flex: 1; padding-top: 4px; }
+
+.timeline-date {
+  font-size: 10px;
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  letter-spacing: 1px;
+  margin-bottom: 3px;
+}
+
+.timeline-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.timeline-meta {
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+/* ═══════════════════════════════════════════════
+   TOGGLE SWITCH
+═══════════════════════════════════════════════ */
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.toggle-row:last-child { border-bottom: none; }
+
+.toggle-info strong {
+  display: block;
+  font-size: 13.5px;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.toggle-info span {
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.switch {
+  position: relative;
+  width: 42px; height: 24px;
+  flex-shrink: 0;
+}
+
+.switch input { display: none; }
+
+.switch-track {
+  position: absolute;
+  inset: 0;
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all .2s;
+}
+
+.switch input:checked + .switch-track {
+  background: var(--emerald);
+  border-color: var(--emerald);
+}
+
+.switch-track::after {
+  content: '';
+  position: absolute;
+  left: 3px; top: 3px;
+  width: 16px; height: 16px;
+  background: white;
+  border-radius: 50%;
+  transition: transform .2s;
+  box-shadow: 0 1px 4px #0004;
+}
+
+.switch input:checked + .switch-track::after {
+  transform: translateX(18px);
+}
+
+/* ═══════════════════════════════════════════════
+   DONUT MINI CHART (SVG inline)
+═══════════════════════════════════════════════ */
+.mini-chart-wrap {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.chart-legend { flex: 1; }
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.legend-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* ═══════════════════════════════════════════════
+   NOTIFICACIÓN TOAST
+═══════════════════════════════════════════════ */
+.toast-container {
+  position: fixed;
+  bottom: 24px; right: 24px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.toast {
+  background: var(--bg2);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius);
+  padding: 14px 18px;
+  min-width: 300px;
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  animation: toastIn .3s ease;
+  font-size: 13.5px;
+}
+
+.toast.success { border-left: 3px solid var(--emerald); }
+.toast.error   { border-left: 3px solid var(--red); }
+.toast.info    { border-left: 3px solid var(--blue); }
+
+@keyframes toastIn {
+  from { opacity: 0; transform: translateX(20px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+/* ═══════════════════════════════════════════════
+   MODAL
+═══════════════════════════════════════════════ */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: #00000088;
+  backdrop-filter: blur(4px);
+  z-index: 1000;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-overlay.open { display: flex; }
+
+.modal {
+  background: var(--bg2);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius);
+  padding: 28px;
+  width: 500px;
+  box-shadow: var(--shadow-lg);
+  animation: modalIn .25s ease;
+}
+
+@keyframes modalIn {
+  from { opacity: 0; transform: scale(.96); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+.modal-title {
+  font-family: var(--font-display);
+  font-size: 20px;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* ═══════════════════════════════════════════════
+   SECTION HEADER
+═══════════════════════════════════════════════ */
+.section-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.section-title {
+  font-family: var(--font-display);
+  font-size: 26px;
+  line-height: 1.1;
+}
+
+.section-title span { color: var(--emerald); font-style: italic; }
+
+.section-sub {
+  font-size: 13px;
+  color: var(--text-3);
+  margin-top: 4px;
+}
+
+.actions-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+/* ═══════════════════════════════════════════════
+   DIVIDER
+═══════════════════════════════════════════════ */
+.divider {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 20px 0;
+}
+
+/* ═══════════════════════════════════════════════
+   SCROLLBAR
+═══════════════════════════════════════════════ */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+/* ═══════════════════════════════════════════════
+   EMPTY STATE
+═══════════════════════════════════════════════ */
+.empty-state {
+  text-align: center;
+  padding: 48px 24px;
+  color: var(--text-3);
+}
+
+.empty-state .empty-icon { font-size: 48px; margin-bottom: 12px; }
+.empty-state .empty-title { font-size: 16px; font-weight: 600; color: var(--text-2); margin-bottom: 6px; }
+.empty-state .empty-sub   { font-size: 13px; }
+
+/* ═══════════════════════════════════════════════
+   GRID DASHBOARD
+═══════════════════════════════════════════════ */
+.dash-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 20px;
+}
+</style>
+</head>
+<body>
+
+<!-- ═══════════════ SIDEBAR ═══════════════ -->
+<nav class="sidebar">
+  <div class="sidebar-logo">
+    <div class="logo-mark">
+      <div class="logo-icon">🧾</div>
+      <div>
+        <div class="logo-text">ContaSAT</div>
+        <div class="logo-sub">Gestión CFDI</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-label">Principal</div>
+    <div class="nav-item active" onclick="goTo('dashboard', this)">
+      <span class="nav-icon">📊</span> Dashboard
+    </div>
+    <div class="nav-item" onclick="goTo('descarga', this)">
+      <span class="nav-icon">⬇️</span> Descarga SAT
+    </div>
+    <div class="nav-item" onclick="goTo('facturas', this)">
+      <span class="nav-icon">🗂️</span> Facturas
+      <span class="nav-badge" id="badge-facturas">24</span>
+    </div>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-label">Contabilidad</div>
+    <div class="nav-item" onclick="goTo('conciliacion', this)">
+      <span class="nav-icon">⚖️</span> Conciliación
+    </div>
+    <div class="nav-item" onclick="goTo('reportes', this)">
+      <span class="nav-icon">📈</span> Reportes
+    </div>
+    <div class="nav-item" onclick="goTo('historial', this)">
+      <span class="nav-icon">🕐</span> Historial
+    </div>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-label">Sistema</div>
+    <div class="nav-item" onclick="goTo('configuracion', this)">
+      <span class="nav-icon">⚙️</span> Configuración
+    </div>
+  </div>
+
+  <div class="sidebar-footer">
+    <div class="rfc-chip">
+      <div class="rfc-label">RFC Activo</div>
+      <div class="rfc-value" id="rfc-display">HUBH900108548</div>
+    </div>
+  </div>
+</nav>
+
+<!-- ═══════════════ MAIN ═══════════════ -->
+<div class="main">
+  <div class="topbar">
+    <div class="topbar-title" id="topbar-title">
+      <span>Dashboard</span> — Resumen del período
+    </div>
+    <div class="status-pill">
+      <div class="status-dot"></div>
+      e.firma válida
+    </div>
+    <button class="btn btn-primary btn-sm" onclick="goTo('descarga', document.querySelector('[onclick*=descarga]'))">
+      ⬇️ Descargar CFDIs
+    </button>
+  </div>
+
+  <div class="content">
+
+    <!-- ═══ DASHBOARD ═══ -->
+    <div class="page active" id="page-dashboard">
+      <div class="section-header">
+        <div>
+          <div class="section-title">Buen día, <span>Héctor</span> 👋</div>
+          <div class="section-sub">Período activo: Enero — Marzo 2026  ·  Última descarga: 01 Mar 2026</div>
+        </div>
+        <div class="actions-row">
+          <button class="btn btn-secondary btn-sm">📅 Cambiar período</button>
+        </div>
+      </div>
+
+      <div class="metrics-grid">
+        <div class="metric-card green">
+          <div class="metric-icon">📤</div>
+          <div class="metric-label">Total Emitido</div>
+          <div class="metric-value green">$184,320</div>
+          <div class="metric-sub">42 CFDIs emitidos</div>
+        </div>
+        <div class="metric-card gold">
+          <div class="metric-icon">📥</div>
+          <div class="metric-label">Total Recibido</div>
+          <div class="metric-value gold">$97,840</div>
+          <div class="metric-sub">67 CFDIs recibidos</div>
+        </div>
+        <div class="metric-card blue">
+          <div class="metric-icon">⚖️</div>
+          <div class="metric-label">Balance Neto</div>
+          <div class="metric-value blue">$86,480</div>
+          <div class="metric-sub">Superávit del período</div>
+        </div>
+        <div class="metric-card red">
+          <div class="metric-icon">⚠️</div>
+          <div class="metric-label">Por Conciliar</div>
+          <div class="metric-value red">8</div>
+          <div class="metric-sub">CFDIs sin clasificar</div>
+        </div>
+      </div>
+
+      <div class="dash-grid">
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">
+              <div class="card-title-icon icon-emerald">📊</div>
+              Últimas facturas recibidas
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="goTo('facturas', document.querySelector('[onclick*=facturas]'))">Ver todas</button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Emisor</th>
+                  <th>Fecha</th>
+                  <th>Total</th>
+                  <th>Tipo</th>
+                  <th>Estado</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong style="color:var(--text)">PHARMA PLUS</strong><br><span style="font-size:11px;color:var(--text-3)">PHAR991201AAA</span></td>
+                  <td class="mono">2026-03-11</td>
+                  <td style="color:var(--emerald);font-weight:600">$3,450.00</td>
+                  <td><span class="badge badge-blue">I</span></td>
+                  <td><span class="badge badge-green">✓ OK</span></td>
+                </tr>
+                <tr>
+                  <td><strong style="color:var(--text)">Costco Gas</strong><br><span style="font-size:11px;color:var(--text-3)">CGA010101AAA</span></td>
+                  <td class="mono">2026-03-08</td>
+                  <td style="color:var(--emerald);font-weight:600">$1,280.00</td>
+                  <td><span class="badge badge-gold">G</span></td>
+                  <td><span class="badge badge-green">✓ OK</span></td>
+                </tr>
+                <tr>
+                  <td><strong style="color:var(--text)">Lab. Chopo</strong><br><span style="font-size:11px;color:var(--text-3)">LCH010101BBB</span></td>
+                  <td class="mono">2026-03-07</td>
+                  <td style="color:var(--emerald);font-weight:600">$890.00</td>
+                  <td><span class="badge badge-blue">I</span></td>
+                  <td><span class="badge badge-gold">⚠ Revisar</span></td>
+                </tr>
+                <tr>
+                  <td><strong style="color:var(--text)">Ben & Frank</strong><br><span style="font-size:11px;color:var(--text-3)">BFR200101CCC</span></td>
+                  <td class="mono">2026-02-28</td>
+                  <td style="color:var(--emerald);font-weight:600">$4,100.00</td>
+                  <td><span class="badge badge-blue">I</span></td>
+                  <td><span class="badge badge-green">✓ OK</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div>
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">
+                <div class="card-title-icon icon-gold">🍩</div>
+                Distribución
+              </div>
+            </div>
+            <div class="mini-chart-wrap">
+              <svg width="100" height="100" viewBox="0 0 100 100">
+                <circle cx="50" cy="50" r="38" fill="none" stroke="var(--bg3)" stroke-width="14"/>
+                <circle cx="50" cy="50" r="38" fill="none" stroke="var(--emerald)" stroke-width="14"
+                  stroke-dasharray="143 96" stroke-dashoffset="24" stroke-linecap="round"/>
+                <circle cx="50" cy="50" r="38" fill="none" stroke="var(--gold)" stroke-width="14"
+                  stroke-dasharray="96 143" stroke-dashoffset="-119" stroke-linecap="round"/>
+                <text x="50" y="54" text-anchor="middle" fill="var(--text)" font-size="13" font-family="DM Serif Display,serif">109</text>
+                <text x="50" y="64" text-anchor="middle" fill="var(--text-3)" font-size="7">CFDIs</text>
+              </svg>
+              <div class="chart-legend">
+                <div class="legend-item">
+                  <div class="legend-dot" style="background:var(--emerald)"></div>
+                  Emitidas (42)
+                </div>
+                <div class="legend-item">
+                  <div class="legend-dot" style="background:var(--gold)"></div>
+                  Recibidas (67)
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">
+                <div class="card-title-icon icon-blue">📅</div>
+                Próxima descarga
+              </div>
+            </div>
+            <div style="font-size:28px;font-family:var(--font-display);color:var(--blue)">01 Abr 2026</div>
+            <div style="font-size:12px;color:var(--text-3);margin-top:4px">Descarga automática programada</div>
+            <div style="margin-top:14px">
+              <button class="btn btn-secondary btn-sm" onclick="goTo('descarga', document.querySelector('[onclick*=descarga]'))">Descargar ahora</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ DESCARGA ═══ -->
+    <div class="page" id="page-descarga">
+      <div class="section-header">
+        <div>
+          <div class="section-title">Descarga <span>SAT</span></div>
+          <div class="section-sub">Configura el rango y descarga tus CFDIs del Web Service del SAT</div>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+
+        <!-- Columna izquierda: configuración -->
+        <div>
+          <!-- e.firma -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">
+                <div class="card-title-icon icon-emerald">🔑</div>
+                e.firma (FIEL)
+              </div>
+              <span class="badge badge-green" id="fiel-status">✓ Cargada</span>
+            </div>
+
+            <div class="form-grid">
+              <div class="field">
+                <label>Certificado (.cer)</label>
+                <div class="drop-zone" id="drop-cer" ondragover="dragOver(event,'drop-cer')" ondragleave="dragLeave('drop-cer')" ondrop="dropFile(event,'drop-cer','cer-name')">
+                  <input type="file" accept=".cer" onchange="fileSelected(this,'cer-name','drop-cer')"/>
+                  <div class="drop-icon">📜</div>
+                  <div class="drop-title">Arrastra tu .cer aquí</div>
+                  <div class="drop-sub">o haz clic para seleccionar</div>
+                  <div class="file-badge" id="cer-name" style="display:none"></div>
+                </div>
+              </div>
+
+              <div class="field">
+                <label>Llave privada (.key)</label>
+                <div class="drop-zone" id="drop-key" ondragover="dragOver(event,'drop-key')" ondragleave="dragLeave('drop-key')" ondrop="dropFile(event,'drop-key','key-name')">
+                  <input type="file" accept=".key" onchange="fileSelected(this,'key-name','drop-key')"/>
+                  <div class="drop-icon">🗝️</div>
+                  <div class="drop-title">Arrastra tu .key aquí</div>
+                  <div class="drop-sub">o haz clic para seleccionar</div>
+                  <div class="file-badge" id="key-name" style="display:none"></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="form-grid" style="margin-top:14px">
+              <div class="field">
+                <label>Contraseña de la e.firma</label>
+                <input type="password" id="fiel-pass" placeholder="••••••••••••" />
+              </div>
+              <div class="field" style="justify-content:flex-end;padding-top:20px">
+                <button class="btn btn-secondary" onclick="validarFiel()">🔒 Validar e.firma</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Rango de fechas -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">
+                <div class="card-title-icon icon-gold">📅</div>
+                Rango de descarga
+              </div>
+            </div>
+
+            <div class="tabs" style="margin-bottom:16px">
+              <button class="tab active" onclick="setRangeMode('auto',this)">🤖 Automático</button>
+              <button class="tab" onclick="setRangeMode('manual',this)">✏️ Manual</button>
+              <button class="tab" onclick="setRangeMode('preset',this)">📋 Presets</button>
+            </div>
+
+            <div id="range-auto">
+              <div style="background:var(--emerald-dim);border:1px solid #00c27a33;border-radius:var(--radius-sm);padding:14px 16px;font-size:13px;color:var(--text-2)">
+                <strong style="color:var(--emerald)">🤖 Modo inteligente activo</strong><br><br>
+                • <strong>1ª ejecución:</strong> 01 Ene 2026 → hoy<br>
+                • <strong>Ejecuciones siguientes:</strong> (última fecha − 1 día) → hoy<br>
+                • <strong>Overwrite:</strong> CFDIs duplicados se sobreescriben por UUID
+              </div>
+            </div>
+
+            <div id="range-manual" style="display:none">
+              <div class="form-grid form-grid-2">
+                <div class="field">
+                  <label>Fecha inicio</label>
+                  <input type="date" id="fecha-ini" value="2026-01-01"/>
+                </div>
+                <div class="field">
+                  <label>Fecha fin</label>
+                  <input type="date" id="fecha-fin" />
+                </div>
+              </div>
+            </div>
+
+            <div id="range-preset" style="display:none">
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+                <button class="btn btn-secondary" onclick="setPreset('mes-actual')">📅 Mes actual</button>
+                <button class="btn btn-secondary" onclick="setPreset('mes-anterior')">◀ Mes anterior</button>
+                <button class="btn btn-secondary" onclick="setPreset('trimestre')">📆 Trimestre actual</button>
+                <button class="btn btn-secondary" onclick="setPreset('anio')">🗓️ Año actual</button>
+              </div>
+            </div>
+
+            <hr class="divider"/>
+
+            <div class="form-grid form-grid-2" style="margin-top:4px">
+              <div class="field">
+                <label>Tipo de descarga</label>
+                <select id="tipo-descarga">
+                  <option value="CFDI">CFDI (XMLs completos)</option>
+                  <option value="Metadata">Metadata (catálogo rápido)</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>Incluir</label>
+                <select id="tipo-cfdi">
+                  <option value="ambas">Emitidas y Recibidas</option>
+                  <option value="recibidas">Solo Recibidas</option>
+                  <option value="emitidas">Solo Emitidas</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Columna derecha: notificación + descarga -->
+        <div>
+          <!-- Notificación email -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">
+                <div class="card-title-icon icon-blue">📧</div>
+                Notificación por correo
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="notif-toggle" checked onchange="toggleNotif(this)"/>
+                <div class="switch-track"></div>
+              </label>
+            </div>
+
+            <div id="notif-config">
+              <div class="form-grid">
+                <div class="field">
+                  <label>Correo de destino</label>
+                  <input type="email" id="notif-email" value="he.huerta.b@gmail.com" placeholder="correo@ejemplo.com"/>
+                  <span class="hint">Recibirás el reporte Excel como adjunto al terminar la descarga</span>
+                </div>
+                <div class="field">
+                  <label>Asunto del correo</label>
+                  <input type="text" id="notif-asunto" value="📊 Reporte CFDIs — {periodo} — ContaSAT"/>
+                </div>
+              </div>
+
+              <hr class="divider"/>
+
+              <div class="toggle-row">
+                <div class="toggle-info">
+                  <strong>Adjuntar reporte Excel</strong>
+                  <span>Envía el .xlsx con el resumen del período</span>
+                </div>
+                <label class="switch">
+                  <input type="checkbox" checked/>
+                  <div class="switch-track"></div>
+                </label>
+              </div>
+              <div class="toggle-row">
+                <div class="toggle-info">
+                  <strong>Notificar errores</strong>
+                  <span>Alerta si el SAT devuelve un error en la solicitud</span>
+                </div>
+                <label class="switch">
+                  <input type="checkbox" checked/>
+                  <div class="switch-track"></div>
+                </label>
+              </div>
+              <div class="toggle-row">
+                <div class="toggle-info">
+                  <strong>Resumen por proveedor</strong>
+                  <span>Incluye tabla de totales por RFC emisor</span>
+                </div>
+                <label class="switch">
+                  <input type="checkbox"/>
+                  <div class="switch-track"></div>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <!-- Automatización -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">
+                <div class="card-title-icon icon-gold">⏰</div>
+                Automatización mensual
+              </div>
+              <label class="switch">
+                <input type="checkbox" checked/>
+                <div class="switch-track"></div>
+              </label>
+            </div>
+            <div class="form-grid form-grid-2">
+              <div class="field">
+                <label>Día del mes</label>
+                <select id="dia-auto">
+                  <option value="1" selected>Día 1</option>
+                  <option value="2">Día 2</option>
+                  <option value="5">Día 5</option>
+                  <option value="15">Día 15</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>Hora de ejecución</label>
+                <input type="time" value="08:00"/>
+              </div>
+            </div>
+          </div>
+
+          <!-- Botón descarga -->
+          <div class="card" style="border-color:var(--emerald);background:linear-gradient(135deg,#0d1117,#0d2018)">
+            <button class="btn btn-primary btn-lg" style="width:100%;justify-content:center;font-size:16px" onclick="iniciarDescarga()">
+              ⬇️ Iniciar descarga del SAT
+            </button>
+            <div style="font-size:11px;color:var(--text-3);text-align:center;margin-top:10px">
+              El SAT puede tardar de minutos a 48h. El script esperará automáticamente.
+            </div>
+          </div>
+
+          <!-- Log de progreso -->
+          <div class="card" id="card-log" style="display:none">
+            <div class="card-header">
+              <div class="card-title">
+                <div class="card-title-icon icon-emerald">⚡</div>
+                Progreso en tiempo real
+              </div>
+              <span class="badge badge-blue" id="log-status">En proceso...</span>
+            </div>
+            <div class="progress-bar-wrap">
+              <div class="progress-bar" id="progress-bar" style="width:0%"></div>
+            </div>
+            <div class="download-log" id="download-log"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ FACTURAS ═══ -->
+    <div class="page" id="page-facturas">
+      <div class="section-header">
+        <div>
+          <div class="section-title">Mis <span>Facturas</span></div>
+          <div class="section-sub">109 CFDIs · Enero — Marzo 2026</div>
+        </div>
+        <div class="actions-row">
+          <input type="text" placeholder="🔍 Buscar por RFC, UUID, emisor..." style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);padding:8px 14px;font-size:13px;outline:none;width:280px"/>
+          <button class="btn btn-secondary btn-sm">📊 Exportar Excel</button>
+        </div>
+      </div>
+
+      <div class="tabs">
+        <button class="tab active" onclick="filterTab(this,'todas')">Todas (109)</button>
+        <button class="tab" onclick="filterTab(this,'recibidas')">📥 Recibidas (67)</button>
+        <button class="tab" onclick="filterTab(this,'emitidas')">📤 Emitidas (42)</button>
+        <button class="tab" onclick="filterTab(this,'notas')">🔴 N. de crédito (3)</button>
+      </div>
+
+      <div class="card" style="padding:0;overflow:hidden">
+        <div class="table-wrap" style="border:none">
+          <table>
+            <thead>
+              <tr>
+                <th>UUID</th>
+                <th>Emisor / Receptor</th>
+                <th>Fecha</th>
+                <th>Descripción</th>
+                <th>SubTotal</th>
+                <th>Total</th>
+                <th>Tipo</th>
+                <th>Estado</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="tabla-facturas">
+              <tr>
+                <td class="mono">554BE18C-F6EE...</td>
+                <td><strong style="color:var(--text)">PHARMA PLUS</strong><br><span style="font-size:11px;color:var(--text-3)">PHAR991201AAA → HUBH900108548</span></td>
+                <td class="mono">2026-03-11</td>
+                <td style="color:var(--text-2);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Medicamentos y reactivos</td>
+                <td>$2,974.14</td>
+                <td style="color:var(--emerald);font-weight:600">$3,450.00</td>
+                <td><span class="badge badge-gold">Recibida</span></td>
+                <td><span class="badge badge-green">✓ Vigente</span></td>
+                <td><button class="btn btn-secondary btn-sm">👁</button></td>
+              </tr>
+              <tr>
+                <td class="mono">2C03F14F-DF5A...</td>
+                <td><strong style="color:var(--text)">Dr. Manuel Olvera</strong><br><span style="font-size:11px;color:var(--text-3)">OLVR750101AAA → HUBH900108548</span></td>
+                <td class="mono">2026-03-11</td>
+                <td style="color:var(--text-2)">Honorarios médicos</td>
+                <td>$6,896.55</td>
+                <td style="color:var(--emerald);font-weight:600">$8,000.00</td>
+                <td><span class="badge badge-gold">Recibida</span></td>
+                <td><span class="badge badge-green">✓ Vigente</span></td>
+                <td><button class="btn btn-secondary btn-sm">👁</button></td>
+              </tr>
+              <tr>
+                <td class="mono">E230B5C8-124D...</td>
+                <td><strong style="color:var(--text)">COOL THINGS</strong><br><span style="font-size:11px;color:var(--text-3)">COOL010101AAA → HUBH900108548</span></td>
+                <td class="mono">2026-03-11</td>
+                <td style="color:var(--text-2)">Equipo electrónico</td>
+                <td>$12,500.00</td>
+                <td style="color:var(--emerald);font-weight:600">$14,500.00</td>
+                <td><span class="badge badge-green">Emitida</span></td>
+                <td><span class="badge badge-gold">⚠ Revisar</span></td>
+                <td><button class="btn btn-secondary btn-sm">👁</button></td>
+              </tr>
+              <tr>
+                <td class="mono">554BE18C-F6EE...</td>
+                <td><strong style="color:var(--text)">Costco Gas</strong><br><span style="font-size:11px;color:var(--text-3)">CGA010101AAA → HUBH900108548</span></td>
+                <td class="mono">2026-03-08</td>
+                <td style="color:var(--text-2)">Combustible gas LP</td>
+                <td>$1,103.45</td>
+                <td style="color:var(--emerald);font-weight:600">$1,280.00</td>
+                <td><span class="badge badge-gold">Recibida</span></td>
+                <td><span class="badge badge-green">✓ Vigente</span></td>
+                <td><button class="btn btn-secondary btn-sm">👁</button></td>
+              </tr>
+              <tr>
+                <td class="mono">VTPY-2025-3017...</td>
+                <td><strong style="color:var(--text)">Ben & Frank</strong><br><span style="font-size:11px;color:var(--text-3)">BFR200101CCC → HUBH900108548</span></td>
+                <td class="mono">2026-02-04</td>
+                <td style="color:var(--text-2)">Lentes oftálmicos</td>
+                <td>$3,534.48</td>
+                <td style="color:var(--emerald);font-weight:600">$4,100.00</td>
+                <td><span class="badge badge-gold">Recibida</span></td>
+                <td><span class="badge badge-green">✓ Vigente</span></td>
+                <td><button class="btn btn-secondary btn-sm">👁</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ CONCILIACIÓN ═══ -->
+    <div class="page" id="page-conciliacion">
+      <div class="section-header">
+        <div>
+          <div class="section-title"><span>Conciliación</span> de CFDIs</div>
+          <div class="section-sub">Clasifica y valida tus facturas contra tu contabilidad</div>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:20px">
+        <div class="metric-card green"><div class="metric-label">Conciliados</div><div class="metric-value green">101</div><div class="metric-sub">92.6% del total</div></div>
+        <div class="metric-card gold"><div class="metric-label">Pendientes</div><div class="metric-value gold">8</div><div class="metric-sub">Requieren revisión</div></div>
+        <div class="metric-card red"><div class="metric-label">Con error</div><div class="metric-value red">0</div><div class="metric-sub">Sin inconsistencias</div></div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title"><div class="card-title-icon icon-gold">⚠️</div>CFDIs pendientes de clasificar</div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Emisor</th><th>Fecha</th><th>Total</th><th>Uso CFDI</th><th>Categoría</th><th>Acción</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong style="color:var(--text)">Lab. Chopo</strong></td>
+                <td class="mono">2026-03-07</td>
+                <td style="color:var(--gold);font-weight:600">$890.00</td>
+                <td><span class="badge badge-blue">G03</span></td>
+                <td>
+                  <select style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:5px 10px;font-size:12px">
+                    <option>-- Seleccionar --</option>
+                    <option>Gastos médicos</option>
+                    <option>Gastos generales</option>
+                    <option>Servicios</option>
+                  </select>
+                </td>
+                <td><button class="btn btn-primary btn-sm">✓ Clasificar</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ REPORTES ═══ -->
+    <div class="page" id="page-reportes">
+      <div class="section-header">
+        <div>
+          <div class="section-title">Centro de <span>Reportes</span></div>
+          <div class="section-sub">Genera y exporta reportes contables para tu contador</div>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px">
+        <div class="card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='var(--emerald)'" onmouseout="this.style.borderColor='var(--border)'" onclick="showToast('📊 Generando reporte...','info')">
+          <div style="font-size:36px;margin-bottom:10px">📊</div>
+          <div style="font-size:15px;font-weight:700;margin-bottom:4px">Relación de CFDIs</div>
+          <div style="font-size:12px;color:var(--text-3);margin-bottom:16px">Lista completa emitidos y recibidos con totales por período</div>
+          <button class="btn btn-secondary btn-sm">Generar Excel</button>
+        </div>
+        <div class="card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='var(--gold)'" onmouseout="this.style.borderColor='var(--border)'" onclick="showToast('🧾 Preparando DIOT...','info')">
+          <div style="font-size:36px;margin-bottom:10px">🧾</div>
+          <div style="font-size:15px;font-weight:700;margin-bottom:4px">Reporte DIOT</div>
+          <div style="font-size:12px;color:var(--text-3);margin-bottom:16px">Declaración Informativa de Operaciones con Terceros</div>
+          <button class="btn btn-secondary btn-sm">Generar .txt</button>
+        </div>
+        <div class="card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='var(--blue)'" onmouseout="this.style.borderColor='var(--border)'" onclick="showToast('📈 Generando balance...','info')">
+          <div style="font-size:36px;margin-bottom:10px">📈</div>
+          <div style="font-size:15px;font-weight:700;margin-bottom:4px">Balance Fiscal</div>
+          <div style="font-size:12px;color:var(--text-3);margin-bottom:16px">Ingresos vs egresos deducibles para declaración mensual</div>
+          <button class="btn btn-secondary btn-sm">Generar PDF</button>
+        </div>
+        <div class="card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='var(--emerald)'" onmouseout="this.style.borderColor='var(--border)'" onclick="showToast('🏢 Agrupando por proveedor...','info')">
+          <div style="font-size:36px;margin-bottom:10px">🏢</div>
+          <div style="font-size:15px;font-weight:700;margin-bottom:4px">Top Proveedores</div>
+          <div style="font-size:12px;color:var(--text-3);margin-bottom:16px">Ranking de proveedores por volumen de facturación</div>
+          <button class="btn btn-secondary btn-sm">Generar Excel</button>
+        </div>
+        <div class="card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='var(--red)'" onmouseout="this.style.borderColor='var(--border)'" onclick="showToast('⚠️ Buscando CFDIs cancelados...','info')">
+          <div style="font-size:36px;margin-bottom:10px">🔴</div>
+          <div style="font-size:15px;font-weight:700;margin-bottom:4px">CFDIs Cancelados</div>
+          <div style="font-size:12px;color:var(--text-3);margin-bottom:16px">Notas de crédito y comprobantes cancelados del período</div>
+          <button class="btn btn-secondary btn-sm">Ver listado</button>
+        </div>
+        <div class="card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='var(--gold)'" onmouseout="this.style.borderColor='var(--border)'" onclick="showToast('📧 Enviando a tu contador...','info')">
+          <div style="font-size:36px;margin-bottom:10px">📧</div>
+          <div style="font-size:15px;font-weight:700;margin-bottom:4px">Enviar a Contador</div>
+          <div style="font-size:12px;color:var(--text-3);margin-bottom:16px">Comparte el paquete completo del mes directamente por correo</div>
+          <button class="btn btn-gold btn-sm">Enviar por Gmail</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ HISTORIAL ═══ -->
+    <div class="page" id="page-historial">
+      <div class="section-header">
+        <div>
+          <div class="section-title">Historial de <span>Descargas</span></div>
+          <div class="section-sub">Registro completo de todas las sincronizaciones con el SAT</div>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:2fr 1fr;gap:20px">
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title"><div class="card-title-icon icon-emerald">🕐</div>Ejecuciones recientes</div>
+          </div>
+          <div class="timeline">
+            <div class="timeline-item">
+              <div class="timeline-dot success">✓</div>
+              <div class="timeline-content">
+                <div class="timeline-date">2026-03-01 · 08:00:14</div>
+                <div class="timeline-title">Descarga mensual — Febrero 2026</div>
+                <div class="timeline-meta">147 CFDIs · 89 recibidas · 58 emitidas · 0 overwrite · Duración: 4m 22s</div>
+              </div>
+            </div>
+            <div class="timeline-item">
+              <div class="timeline-dot success">✓</div>
+              <div class="timeline-content">
+                <div class="timeline-date">2026-02-01 · 08:00:09</div>
+                <div class="timeline-title">Descarga mensual — Enero 2026</div>
+                <div class="timeline-meta">203 CFDIs · 118 recibidas · 85 emitidas · 3 overwrite · Duración: 6m 11s</div>
+              </div>
+            </div>
+            <div class="timeline-item">
+              <div class="timeline-dot success">✓</div>
+              <div class="timeline-content">
+                <div class="timeline-date">2026-01-01 · 08:00:05</div>
+                <div class="timeline-title">Primera descarga — 01 Ene → 31 Dic 2025</div>
+                <div class="timeline-meta">1,847 CFDIs · Año completo · Duración: 48m 33s</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title"><div class="card-title-icon icon-blue">📁</div>Archivos en disco</div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <div style="display:flex;justify-content:space-between;font-size:13px;padding:8px 0;border-bottom:1px solid var(--border)">
+              <span style="color:var(--text-2)">Total XMLs</span><strong>2,197</strong>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:13px;padding:8px 0;border-bottom:1px solid var(--border)">
+              <span style="color:var(--text-2)">UUIDs únicos</span><strong>2,197</strong>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:13px;padding:8px 0;border-bottom:1px solid var(--border)">
+              <span style="color:var(--text-2)">Tamaño total</span><strong>184 MB</strong>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:13px;padding:8px 0">
+              <span style="color:var(--text-2)">Carpeta raíz</span><strong style="font-family:var(--font-mono);font-size:11px;color:var(--emerald)">contabilidad_sat/</strong>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ CONFIGURACIÓN ═══ -->
+    <div class="page" id="page-configuracion">
+      <div class="section-header">
+        <div>
+          <div class="section-title">⚙️ <span>Configuración</span></div>
+          <div class="section-sub">Perfil fiscal, notificaciones y preferencias del sistema</div>
+        </div>
+        <button class="btn btn-primary" onclick="guardarConfig()">💾 Guardar cambios</button>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+        <div>
+          <div class="card">
+            <div class="card-header"><div class="card-title"><div class="card-title-icon icon-gold">👤</div>Perfil fiscal</div></div>
+            <div class="form-grid">
+              <div class="field">
+                <label>RFC</label>
+                <input type="text" id="cfg-rfc" value="HUBH900108548" style="font-family:var(--font-mono)" oninput="document.getElementById('rfc-display').textContent=this.value"/>
+              </div>
+              <div class="field">
+                <label>Nombre / Razón social</label>
+                <input type="text" value="HECTOR ERNESTO HUERTA BATIZ"/>
+              </div>
+              <div class="field">
+                <label>Régimen fiscal</label>
+                <select>
+                  <option>612 — Personas Físicas con Actividades Empresariales</option>
+                  <option>605 — Sueldos y Salarios</option>
+                  <option>606 — Arrendamiento</option>
+                  <option>625 — Régimen Simplificado de Confianza</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>Carpeta de almacenamiento</label>
+                <input type="text" value="C:\ContaSAT\contabilidad_sat" style="font-family:var(--font-mono);font-size:12px"/>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header"><div class="card-title"><div class="card-title-icon icon-blue">📧</div>Correos de notificación</div></div>
+            <div class="form-grid">
+              <div class="field">
+                <label>Correo principal (tú)</label>
+                <input type="email" value="he.huerta.b@gmail.com"/>
+              </div>
+              <div class="field">
+                <label>Contador (CC)</label>
+                <input type="email" placeholder="contador@despacho.com"/>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div class="card">
+            <div class="card-header"><div class="card-title"><div class="card-title-icon icon-emerald">🔔</div>Notificaciones</div></div>
+            <div class="toggle-row">
+              <div class="toggle-info"><strong>Descarga completada</strong><span>Al terminar cada descarga del SAT</span></div>
+              <label class="switch"><input type="checkbox" checked/><div class="switch-track"></div></label>
+            </div>
+            <div class="toggle-row">
+              <div class="toggle-info"><strong>Error en descarga</strong><span>Si el SAT devuelve un error</span></div>
+              <label class="switch"><input type="checkbox" checked/><div class="switch-track"></div></label>
+            </div>
+            <div class="toggle-row">
+              <div class="toggle-info"><strong>e.firma próxima a vencer</strong><span>30 días antes del vencimiento</span></div>
+              <label class="switch"><input type="checkbox" checked/><div class="switch-track"></div></label>
+            </div>
+            <div class="toggle-row">
+              <div class="toggle-info"><strong>CFDIs pendientes de conciliar</strong><span>Si hay facturas sin clasificar al final del mes</span></div>
+              <label class="switch"><input type="checkbox"/><div class="switch-track"></div></label>
+            </div>
+            <div class="toggle-row">
+              <div class="toggle-info"><strong>Recordatorio declaración mensual</strong><span>Aviso el día 15 de cada mes</span></div>
+              <label class="switch"><input type="checkbox" checked/><div class="switch-track"></div></label>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header"><div class="card-title"><div class="card-title-icon icon-red">⚠️</div>Zona de peligro</div></div>
+            <button class="btn btn-danger btn-sm" onclick="showToast('Historial limpiado correctamente','success')">🗑️ Limpiar historial de descargas</button>
+            <div style="font-size:11px;color:var(--text-3);margin-top:8px">No elimina los archivos XML del disco, solo el registro interno.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Toast container -->
+<div class="toast-container" id="toast-container"></div>
+
+<script>
+// ══════════════════════════════════════
+//  NAVEGACIÓN
+// ══════════════════════════════════════
+function goTo(page, el) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('page-' + page).classList.add('active');
+  if (el) el.classList.add('active');
+
+  const titles = {
+    dashboard:     ['Dashboard', 'Resumen del período'],
+    descarga:      ['Descarga SAT', 'Configura y ejecuta tu sincronización'],
+    facturas:      ['Facturas', 'Gestión de CFDIs'],
+    conciliacion:  ['Conciliación', 'Clasifica tus comprobantes'],
+    reportes:      ['Reportes', 'Exporta para tu contador'],
+    historial:     ['Historial', 'Registro de sincronizaciones'],
+    configuracion: ['Configuración', 'Preferencias del sistema'],
+  };
+  const t = titles[page] || [page, ''];
+  document.getElementById('topbar-title').innerHTML =
+    `<span>${t[0]}</span> — ${t[1]}`;
+}
+
+// ══════════════════════════════════════
+//  RANGO MODE
+// ══════════════════════════════════════
+function setRangeMode(mode, btn) {
+  document.querySelectorAll('#range-auto,#range-manual,#range-preset')
+    .forEach(el => el.style.display = 'none');
+  document.getElementById('range-' + mode).style.display = 'block';
+  btn.closest('.tabs').querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+function setPreset(preset) {
+  const hoy = new Date();
+  let ini, fin;
+  if (preset === 'mes-actual') {
+    ini = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+    fin = hoy;
+  } else if (preset === 'mes-anterior') {
+    ini = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1);
+    fin = new Date(hoy.getFullYear(), hoy.getMonth(), 0);
+  } else if (preset === 'trimestre') {
+    const q = Math.floor(hoy.getMonth() / 3);
+    ini = new Date(hoy.getFullYear(), q * 3, 1);
+    fin = hoy;
+  } else {
+    ini = new Date(hoy.getFullYear(), 0, 1);
+    fin = hoy;
+  }
+  document.getElementById('fecha-ini').value = ini.toISOString().slice(0,10);
+  document.getElementById('fecha-fin').value  = fin.toISOString().slice(0,10);
+  setRangeMode('manual', document.querySelectorAll('.tabs .tab')[1]);
+  showToast('Rango actualizado: ' + ini.toISOString().slice(0,10) + ' → ' + fin.toISOString().slice(0,10), 'info');
+}
+
+// ══════════════════════════════════════
+//  FILE DROP
+// ══════════════════════════════════════
+function fileSelected(input, badgeId, zoneId) {
+  const f = input.files[0];
+  if (!f) return;
+  const badge = document.getElementById(badgeId);
+  badge.textContent = '📎 ' + f.name;
+  badge.style.display = 'inline-flex';
+  document.getElementById(zoneId).style.borderColor = 'var(--emerald)';
+  showToast('Archivo cargado: ' + f.name, 'success');
+}
+
+function dragOver(e, id) {
+  e.preventDefault();
+  document.getElementById(id).classList.add('drag-over');
+}
+
+function dragLeave(id) {
+  document.getElementById(id).classList.remove('drag-over');
+}
+
+function dropFile(e, zoneId, badgeId) {
+  e.preventDefault();
+  dragLeave(zoneId);
+  const f = e.dataTransfer.files[0];
+  if (f) {
+    const badge = document.getElementById(badgeId);
+    badge.textContent = '📎 ' + f.name;
+    badge.style.display = 'inline-flex';
+    document.getElementById(zoneId).style.borderColor = 'var(--emerald)';
+    showToast('Archivo cargado: ' + f.name, 'success');
+  }
+}
+
+// ══════════════════════════════════════
+//  VALIDAR e.FIRMA
+// ══════════════════════════════════════
+function validarFiel() {
+  showToast('🔑 Validando e.firma con el SAT...', 'info');
+  setTimeout(() => {
+    document.getElementById('fiel-status').className = 'badge badge-green';
+    document.getElementById('fiel-status').textContent = '✓ Válida';
+    showToast('e.firma validada correctamente', 'success');
+  }, 1800);
+}
+
+// ══════════════════════════════════════
+//  INICIAR DESCARGA (simulación visual)
+// ══════════════════════════════════════
+const logMsgs = [
+  ['🔑 Cargando e.firma...', 'ok'],
+  ['✅ e.firma válida. Token obtenido del SAT.', 'ok'],
+  ['📤 Solicitando CFDIs RECIBIDOS...', 'info'],
+  ['   ID solicitud: A3F2-9841-CC12  |  Código: 5000 (Aceptada)', 'ok'],
+  ['⏳ Verificando solicitud... estado=2 (En proceso)', 'warn'],
+  ['⏳ Verificando solicitud... estado=2 (En proceso)', 'warn'],
+  ['✅ Solicitud lista. 3 paquetes disponibles.', 'ok'],
+  ['📥 Descargando paquete 1/3...', 'info'],
+  ['📥 Descargando paquete 2/3...', 'info'],
+  ['📥 Descargando paquete 3/3...', 'info'],
+  ['📂 Extrayendo XMLs... 67 nuevos, 0 overwrite.', 'ok'],
+  ['📤 Solicitando CFDIs EMITIDOS...', 'info'],
+  ['   ID solicitud: B8D1-4422-EE98  |  Código: 5000 (Aceptada)', 'ok'],
+  ['✅ Solicitud lista. 1 paquete disponible.', 'ok'],
+  ['📥 Descargando paquete 1/1...', 'info'],
+  ['📂 Extrayendo XMLs... 42 nuevos, 0 overwrite.', 'ok'],
+  ['📊 Generando reporte Excel...', 'info'],
+  ['📧 Enviando notificación a he.huerta.b@gmail.com...', 'info'],
+  ['✅ Correo enviado con reporte adjunto.', 'ok'],
+  ['', ''],
+  ['✅ COMPLETADO — 109 CFDIs  |  109 nuevos  |  0 overwrite', 'ok'],
+];
+
+let downloadRunning = false;
+
+function iniciarDescarga() {
+  if (downloadRunning) return;
+  downloadRunning = true;
+  const card = document.getElementById('card-log');
+  const logEl = document.getElementById('download-log');
+  const bar   = document.getElementById('progress-bar');
+  const stat  = document.getElementById('log-status');
+
+  card.style.display = 'block';
+  logEl.innerHTML = '';
+  bar.style.width = '0%';
+  stat.className = 'badge badge-blue';
+  stat.textContent = 'En proceso...';
+
+  card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  showToast('⬇️ Descarga iniciada. Conectando con el SAT...', 'info');
+
+  let i = 0;
+  const step = () => {
+    if (i >= logMsgs.length) {
+      bar.style.width = '100%';
+      stat.className = 'badge badge-green';
+      stat.textContent = '✓ Completado';
+      showToast('✅ 109 CFDIs descargados. Reporte enviado a tu correo.', 'success');
+      downloadRunning = false;
+      return;
+    }
+    const [msg, type] = logMsgs[i];
+    if (msg) {
+      const line = document.createElement('div');
+      line.className = 'log-line ' + type;
+      line.textContent = msg;
+      logEl.appendChild(line);
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+    bar.style.width = Math.round((i / logMsgs.length) * 100) + '%';
+    i++;
+    setTimeout(step, msg ? 600 : 100);
+  };
+  setTimeout(step, 400);
+}
+
+// ══════════════════════════════════════
+//  TOGGLE NOTIF
+// ══════════════════════════════════════
+function toggleNotif(el) {
+  document.getElementById('notif-config').style.opacity = el.checked ? '1' : '.4';
+  document.getElementById('notif-config').style.pointerEvents = el.checked ? 'all' : 'none';
+}
+
+// ══════════════════════════════════════
+//  FILTRO TABS FACTURAS
+// ══════════════════════════════════════
+function filterTab(btn, tipo) {
+  btn.closest('.tabs').querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+  showToast('Filtrando: ' + tipo, 'info');
+}
+
+// ══════════════════════════════════════
+//  GUARDAR CONFIG
+// ══════════════════════════════════════
+function guardarConfig() {
+  showToast('💾 Configuración guardada correctamente', 'success');
+}
+
+// ══════════════════════════════════════
+//  TOAST
+// ══════════════════════════════════════
+function showToast(msg, type = 'info') {
+  const c = document.getElementById('toast-container');
+  const icons = { success: '✅', error: '❌', info: '💬' };
+  const t = document.createElement('div');
+  t.className = 'toast ' + type;
+  t.innerHTML = `<span style="font-size:18px">${icons[type]}</span><span>${msg}</span>`;
+  c.appendChild(t);
+  setTimeout(() => { t.style.opacity='0'; t.style.transform='translateX(20px)'; t.style.transition='all .3s'; setTimeout(()=>t.remove(),300); }, 3500);
+}
+
+// Fecha actual en campos date
+document.getElementById('fecha-fin').value = new Date().toISOString().slice(0,10);
+</script>
+</body>
+</html>

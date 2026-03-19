@@ -2124,56 +2124,124 @@ document.getElementById('fecha-fin').value = new Date().toISOString().slice(0,10
 window.addEventListener('pywebviewready', inicializarFiel);
 </script>
 
+
+
+
 <script>
-// ── PyWebView bridge ──────────────────────────────────────
-// Reemplaza llamadas directas con la API real de PyWebView
-function api(method, args={}) {
-  return new Promise(resolve => {
-    const call = () => {
-      if (window.pywebview && window.pywebview.api && window.pywebview.api[method]) {
-        window.pywebview.api[method](args).then(resolve)
-          .catch(e => { console.error(e); resolve({ok:false, msg:String(e)}); });
-      } else {
-        // Stub para desarrollo en navegador
-        console.warn('PyWebView no disponible - stub:', method, args);
-        resolve({ok:true, msg:'[stub] '+method, data:[], ejecuciones:[], uuids:[]});
-      }
-    };
-    if (document.readyState==='loading')
-      window.addEventListener('pywebviewready', call, {once:true});
-    else if (window.pywebview) call();
-    else window.addEventListener('pywebviewready', call, {once:true});
-  });
-}
-window.contasat = {
-  addLog(msg, level='info') {
-    const box = document.getElementById('log-box');
-    if (!box) return;
-    const d = document.createElement('div');
-    d.className = 'log-'+level;
-    d.textContent = new Date().toLocaleTimeString('es-MX')+'  '+msg;
-    box.appendChild(d); box.scrollTop = box.scrollHeight;
+// ═══════════════════════════════════════════════════════
+//  ContaSAT API Client  v3.0  (Flask fetch bridge)
+//  Reemplaza window.pywebview.api por fetch('/api/...')
+// ═══════════════════════════════════════════════════════
+
+const API = {
+  async _post(endpoint, body = {}) {
+    const r = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    return r.json();
   },
-  setProgress(pct) {
-    const b = document.getElementById('prog-bar');
-    if (b) b.style.width = pct+'%';
+  async _get(endpoint, params = {}) {
+    const qs = new URLSearchParams(params).toString();
+    const r  = await fetch(qs ? `${endpoint}?${qs}` : endpoint);
+    return r.json();
   },
-  onEvent(event, data) {
-    if (event==='descarga_completada') {
-      document.getElementById('log-status').className='badge b-green';
-      document.getElementById('log-status').textContent='✓ Completado';
-      document.getElementById('btn-descarga').disabled=false;
-      toast(`${data.total} CFDIs — ${data.nuevos} nuevos, ${data.overwrite} overwrite`,'success');
-      cargarDashboard && cargarDashboard();
-    }
-    if (event==='descarga_error') {
-      document.getElementById('log-status').className='badge b-red';
-      document.getElementById('log-status').textContent='✗ Error';
-      document.getElementById('btn-descarga').disabled=false;
-      toast('Error: '+data.msg,'error');
-    }
-  }
+
+  // Config
+  get_config:  ()    => API._get('/api/config'),
+  save_config: (cfg) => API._post('/api/config', cfg),
+
+  // e.firma
+  get_fiel_status:              ()    => API._get('/api/fiel/status'),
+  cargar_fiel:                  (d)   => API._post('/api/fiel/cargar', d),
+  cargar_fiel_desde_rutas_guardadas: (d) => API._post('/api/fiel/cargar-guardada', d),
+
+  // Rango e historial
+  get_rango_automatico: () => API._get('/api/rango/automatico'),
+  get_historial:        () => API._get('/api/historial'),
+  limpiar_historial:    () => API._post('/api/historial/limpiar'),
+
+  // Descarga
+  iniciar_descarga:  (d)   => API._post('/api/descarga/iniciar', d),
+  estado_descarga:   (desde) => API._get('/api/descarga/estado', { desde }),
+
+  // Facturas y dashboard
+  get_facturas:        (p) => API._get('/api/facturas', p || {}),
+  get_dashboard_stats: ()  => API._get('/api/dashboard/stats'),
+  generar_reporte:     ()  => API._post('/api/reporte/excel'),
+
+  // Sistema
+  abrir_carpeta:  () => API._post('/api/sistema/abrir-carpeta'),
+  get_log_reciente: () => API._get('/api/sistema/log'),
 };
+
+// Compatibilidad: hacer que api() use el cliente Flask
+function api(method, args) {
+  if (typeof API[method] === 'function') {
+    return args !== undefined ? API[method](args) : API[method]();
+  }
+  console.warn('Metodo no encontrado:', method);
+  return Promise.resolve({ ok: false, msg: 'Metodo no encontrado: ' + method });
+}
+
+// ── Polling de progreso durante la descarga ───────────────
+let _logOffset  = 0;
+let _pollTimer  = null;
+
+function iniciarPolling() {
+  _logOffset = 0;
+  _pollTimer = setInterval(async () => {
+    try {
+      const estado = await API.estado_descarga(_logOffset);
+      // Agregar nuevas lineas al log
+      for (const linea of estado.log || []) {
+        window.contasat && window.contasat.addLog(linea.msg, linea.level);
+      }
+      _logOffset = estado.total_log || _logOffset;
+      // Actualizar barra
+      window.contasat && window.contasat.setProgress(estado.progreso || 0);
+      // Verificar si termino
+      if (!estado.descargando) {
+        clearInterval(_pollTimer);
+        const ultimo = (estado.log || []).slice(-1)[0];
+        if (ultimo && ultimo.level === 'ok') {
+          window.contasat && window.contasat.onEvent('descarga_completada', {
+            total: 0, nuevos: 0, overwrite: 0
+          });
+        } else if (ultimo && ultimo.level === 'error') {
+          window.contasat && window.contasat.onEvent('descarga_error',
+            { msg: ultimo.msg });
+        }
+      }
+    } catch(e) {
+      console.error('Poll error:', e);
+    }
+  }, 1500);
+}
+
+// Sobreescribir iniciarDescarga para iniciar el polling
+const _origIniciarDescarga = typeof iniciarDescarga !== 'undefined' ? iniciarDescarga : null;
+window.addEventListener('DOMContentLoaded', () => {
+  // Parchear el boton de descarga para incluir polling
+  const btn = document.getElementById('btn-descarga');
+  if (btn) {
+    const orig = btn.onclick;
+    btn.onclick = async function() {
+      if (orig) await orig.call(this);
+      iniciarPolling();
+    };
+  }
+});
+
+// Disparar inicializacion cuando DOM este listo
+window.addEventListener('DOMContentLoaded', () => {
+  setTimeout(() => {
+    if (typeof inicializarFiel === 'function') inicializarFiel();
+    if (typeof cargarDashboard === 'function') cargarDashboard();
+    if (typeof calcularRangoAuto === 'function') calcularRangoAuto();
+  }, 300);
+});
 </script>
 
 </body>

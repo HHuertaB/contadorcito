@@ -178,7 +178,7 @@ echo         (Esto puede tardar unos minutos la primera vez^)
 echo.
 
 :: Instalar paquetes base del entorno virtual
-for %%p in (pywebview openpyxl lxml schedule) do (
+for %%p in (flask openpyxl lxml schedule) do (
     echo         Instalando %%p ...
     "%VENV_PIP%" install %%p --quiet >> "%LOG_FILE%" 2>&1
     if !errorlevel! equ 0 (
@@ -191,7 +191,7 @@ for %%p in (pywebview openpyxl lxml schedule) do (
 :: satcfdi: libreria estable para descarga de CFDIs del SAT
 echo         Instalando satcfdi ...
 "%VENV_PIP%" install satcfdi --quiet >> "%LOG_FILE%" 2>&1
-"%VENV_PY%" -c "from satcfdi.models import Signer; from satcfdi.pacs.sat import SAT" >nul 2>&1
+"%VENV_PY%" -c "from satcfdi.models import Signer; from satcfdi.pacs.sat import SAT, TipoDescargaMasivaTerceros" >nul 2>&1
 if %errorlevel% neq 0 (
     echo         [ERROR] satcfdi no funciona. Revisa: %LOG_FILE%
 ) else (

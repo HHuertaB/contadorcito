@@ -3,7 +3,7 @@ title ContaSAT
 cd /d "%~dp0"
 
 echo.
-echo  ContaSAT - Iniciando...
+echo  ContaSAT v3.0 - Iniciando...
 echo  -------------------------------------------------------
 echo.
 
@@ -26,28 +26,18 @@ if not exist "%~dp0app.py" (
 
 echo  Verificando dependencias...
 
-:: satcfdi
-"%VENV_PY%" -c "from satcfdi.models import Signer; from satcfdi.pacs.sat import SAT, TipoDescargaMasivaTerceros" >nul 2>&1
+"%VENV_PY%" -c "import flask" >nul 2>&1
+if %errorlevel% neq 0 (
+    echo  [INFO] Instalando flask...
+    "%VENV_PIP%" install flask --quiet
+)
+
+"%VENV_PY%" -c "from satcfdi.models import Signer" >nul 2>&1
 if %errorlevel% neq 0 (
     echo  [INFO] Instalando satcfdi...
     "%VENV_PIP%" install satcfdi --quiet
-    "%VENV_PY%" -c "from satcfdi.models import Signer" >nul 2>&1
-    if %errorlevel% neq 0 (
-        echo  [ERROR] No se pudo instalar satcfdi.
-        echo          Verifica tu conexion a internet y ejecuta instalar_contasat.bat.
-        pause
-        exit /b 1
-    )
 )
 
-:: pywebview
-"%VENV_PY%" -c "import webview" >nul 2>&1
-if %errorlevel% neq 0 (
-    echo  [INFO] Instalando pywebview...
-    "%VENV_PIP%" install pywebview --quiet
-)
-
-:: openpyxl
 "%VENV_PY%" -c "import openpyxl" >nul 2>&1
 if %errorlevel% neq 0 (
     echo  [INFO] Instalando openpyxl...
@@ -56,7 +46,11 @@ if %errorlevel% neq 0 (
 
 echo  [OK] Dependencias verificadas.
 echo.
-echo  [OK] Abriendo ContaSAT...
+echo  [OK] Iniciando ContaSAT en http://localhost:5120
+echo       El navegador se abrira automaticamente.
+echo.
+echo  Para cerrar ContaSAT cierra esta ventana.
+echo  -------------------------------------------------------
 echo.
 
 "%VENV_PY%" app.py
@@ -69,8 +63,8 @@ if %errorlevel% neq 0 (
     echo.
     echo  Diagnostico:
     "%VENV_PY%" --version
-    "%VENV_PY%" -c "import satcfdi; print('satcfdi: OK')" 2>&1
-    "%VENV_PY%" -c "import webview; print('pywebview: OK')" 2>&1
+    "%VENV_PY%" -c "import flask; print('flask:', flask.__version__)" 2>&1
+    "%VENV_PY%" -c "import satcfdi; print('satcfdi OK')" 2>&1
     echo.
     echo  Opciones:
     echo  1. Ejecuta instalar_contasat.bat nuevamente.

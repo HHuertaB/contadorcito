@@ -24,40 +24,30 @@ if not exist "%~dp0app.py" (
     exit /b 1
 )
 
-:: Verificar cfdiclient con la API correcta
-echo  Verificando cfdiclient...
-"%VENV_PY%" -c "from cfdiclient import Autenticacion, DescargaMasiva, Fiel, SolicitaDescarga, VerificaSolicitudDescarga" >nul 2>&1
+echo  Verificando dependencias...
+
+:: satcfdi
+"%VENV_PY%" -c "from satcfdi.models import Signer; from satcfdi.pacs.sat import SAT, TipoDescargaMasivaTerceros" >nul 2>&1
 if %errorlevel% neq 0 (
-    echo  [INFO] Instalando cfdiclient 1.5.9 (version estable)...
-    "%VENV_PIP%" install cfdiclient==1.5.9 --quiet
+    echo  [INFO] Instalando satcfdi...
+    "%VENV_PIP%" install satcfdi --quiet
+    "%VENV_PY%" -c "from satcfdi.models import Signer" >nul 2>&1
     if %errorlevel% neq 0 (
-        echo  [INFO] PyPI fallo, instalando desde GitHub...
-        "%VENV_PIP%" install "git+https://github.com/luisiturrios1/python-cfdiclient.git@1.5.9" --quiet
-    )
-    "%VENV_PY%" -c "from cfdiclient import Autenticacion, DescargaMasiva, Fiel, SolicitaDescarga, VerificaSolicitudDescarga" >nul 2>&1
-    if %errorlevel% neq 0 (
-        echo.
-        echo  [ERROR] No se pudo instalar cfdiclient correctamente.
-        echo.
-        echo  Intenta manualmente en una terminal:
-        echo    %VENV_PIP% install cfdiclient==1.5.9
-        echo.
-        "%VENV_PY%" -c "import cfdiclient; print('Version:', getattr(cfdiclient,'__version__','?')); print('Disponible:', [x for x in dir(cfdiclient) if not x.startswith('_')])"
-        echo.
+        echo  [ERROR] No se pudo instalar satcfdi.
+        echo          Verifica tu conexion a internet y ejecuta instalar_contasat.bat.
         pause
         exit /b 1
     )
-    echo  [OK] cfdiclient 1.5.9 instalado.
 )
 
-:: Verificar pywebview
+:: pywebview
 "%VENV_PY%" -c "import webview" >nul 2>&1
 if %errorlevel% neq 0 (
     echo  [INFO] Instalando pywebview...
     "%VENV_PIP%" install pywebview --quiet
 )
 
-:: Verificar openpyxl
+:: openpyxl
 "%VENV_PY%" -c "import openpyxl" >nul 2>&1
 if %errorlevel% neq 0 (
     echo  [INFO] Instalando openpyxl...
@@ -79,8 +69,8 @@ if %errorlevel% neq 0 (
     echo.
     echo  Diagnostico:
     "%VENV_PY%" --version
-    "%VENV_PY%" -c "import cfdiclient; print('cfdiclient', getattr(cfdiclient,'__version__','?'))" 2>&1
-    "%VENV_PY%" -c "import webview; print('pywebview OK')" 2>&1
+    "%VENV_PY%" -c "import satcfdi; print('satcfdi: OK')" 2>&1
+    "%VENV_PY%" -c "import webview; print('pywebview: OK')" 2>&1
     echo.
     echo  Opciones:
     echo  1. Ejecuta instalar_contasat.bat nuevamente.

@@ -177,7 +177,8 @@ echo  [5/7] Instalando dependencias en el entorno virtual...
 echo         (Esto puede tardar unos minutos la primera vez^)
 echo.
 
-for %%p in (pywebview cfdiclient openpyxl lxml schedule) do (
+:: Instalar paquetes base (cfdiclient fijado en 1.5.9 por compatibilidad)
+for %%p in (pywebview openpyxl lxml schedule) do (
     echo         Instalando %%p ...
     "%VENV_PIP%" install %%p --quiet >> "%LOG_FILE%" 2>&1
     if !errorlevel! equ 0 (
@@ -187,19 +188,19 @@ for %%p in (pywebview cfdiclient openpyxl lxml schedule) do (
     )
 )
 
-:: Verificar que cfdiclient tenga las clases correctas
+:: cfdiclient: fijar version 1.5.9 que tiene la API correcta
+echo         Instalando cfdiclient 1.5.9 ...
+"%VENV_PIP%" install cfdiclient==1.5.9 --quiet >> "%LOG_FILE%" 2>&1
+if %errorlevel% neq 0 (
+    echo         [WARN] PyPI fallo, intentando desde GitHub...
+    "%VENV_PIP%" install "git+https://github.com/luisiturrios1/python-cfdiclient.git@1.5.9" --quiet >> "%LOG_FILE%" 2>&1
+)
+
 "%VENV_PY%" -c "from cfdiclient import Autenticacion, DescargaMasiva, Fiel, SolicitaDescarga, VerificaSolicitudDescarga" >nul 2>&1
 if %errorlevel% neq 0 (
-    echo.
-    echo  [WARN] cfdiclient no tiene todas las clases requeridas.
-    echo         Intentando reinstalar desde cero...
-    "%VENV_PIP%" install cfdiclient --force-reinstall --quiet >> "%LOG_FILE%" 2>&1
-    "%VENV_PY%" -c "from cfdiclient import Autenticacion, DescargaMasiva, Fiel, SolicitaDescarga, VerificaSolicitudDescarga" >nul 2>&1
-    if %errorlevel% neq 0 (
-        echo  [ERROR] cfdiclient sigue incompleto. Revisa: %LOG_FILE%
-    ) else (
-        echo  [OK] cfdiclient reinstalado correctamente.
-    )
+    echo         [ERROR] cfdiclient no funciona. Revisa: %LOG_FILE%
+) else (
+    echo         [OK] cfdiclient 1.5.9
 )
 
 echo.

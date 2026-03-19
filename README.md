@@ -1,96 +1,106 @@
-# ContaSAT — Gestión de CFDIs del SAT México
+# ContaSAT
 
-Sistema de escritorio para la descarga automática, organización y gestión de Comprobantes Fiscales Digitales por Internet (CFDI) directamente desde el Web Service del SAT.
+![Version](https://img.shields.io/badge/version-1.0.0-00c27a?style=flat-square)
+![Python](https://img.shields.io/badge/python-3.10%2B-blue?style=flat-square&logo=python)
+![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078d4?style=flat-square&logo=windows)
+![License](https://img.shields.io/badge/licencia-Personal-e8c44a?style=flat-square)
 
----
-
-## Instalación
-
-Solo descarga un archivo y ejecútalo como Administrador:
-
-1. Descarga [`instalar_contasat.bat`](instalar_contasat.bat)
-2. Haz clic derecho → **Ejecutar como administrador**
-3. El instalador descarga Python, las dependencias y los scripts automáticamente
-
-El resto lo hace solo. No necesitas descargar ningún otro archivo manualmente.
+Sistema de escritorio para la descarga automática, organización y gestión de Comprobantes Fiscales Digitales (CFDI) directamente desde el Web Service del SAT México.
 
 ---
 
-## Qué hace el instalador
+## Instalación en un solo paso
 
-| Etapa | Acción |
-|-------|--------|
-| 1 | Verifica conexión a internet y permisos de administrador |
-| 2 | Crea la estructura de carpetas en `C:\Users\TuUsuario\ContaSAT\` |
-| 3 | Detecta Python; si no existe, lo descarga e instala (Python 3.12) |
-| 4 | Descarga los scripts desde este repositorio |
-| 5 | Instala las dependencias Python (`cfdiclient`, `openpyxl`, `lxml`, `schedule`) |
-| 6 | Registra la tarea mensual automática en el Programador de tareas de Windows |
-| 7 | Crea acceso directo en el Escritorio |
+Descarga **únicamente** este archivo y ejecútalo como Administrador:
+
+```
+instalar_contasat.bat
+```
+
+El instalador descarga Python, las dependencias y todos los scripts desde este repositorio. No necesitas descargar nada más.
 
 ---
 
-## Funcionalidades
+## Qué incluye
 
-- **Descarga automática mensual** de CFDIs emitidos y recibidos via Web Service del SAT
-- **Rango inteligente**: primera ejecución descarga desde el 1 de enero; ejecuciones siguientes descargan desde la última fecha registrada
-- **Overwrite por UUID**: nunca genera duplicados; sobreescribe si el CFDI ya existe
-- **Interfaz gráfica** con Dashboard, módulo de facturas, conciliación y reportes
-- **Notificación por correo** al terminar cada descarga con reporte Excel adjunto
-- **Reportes**: relación de CFDIs, DIOT, balance fiscal, top proveedores
+| Módulo | Descripción |
+|--------|-------------|
+| Dashboard | Métricas del período: emitido, recibido, balance y CFDIs en disco |
+| Descarga SAT | Conexión al Web Service del SAT con e.firma via drag & drop |
+| Facturas | Consulta, búsqueda y filtrado de todos los CFDIs descargados |
+| Conciliación | Clasificación de facturas por categoría para declaraciones |
+| Reportes | Excel, DIOT, balance fiscal y paquete para contador |
+| Historial | Registro completo de sincronizaciones con estadísticas |
+| Configuración | RFC, régimen fiscal, correos y automatización mensual |
+
+---
+
+## Arquitectura
+
+```
+contadorcito/
+├── instalar_contasat.bat        ← Único archivo que el usuario descarga
+├── src/
+│   ├── app.py                   ← Backend Python + API PyWebView
+│   ├── contasat_gui.html        ← Interfaz gráfica (HTML/CSS/JS)
+│   └── instalar_dependencias.py ← Instalador de librerías
+├── docs/
+│   ├── INSTALL.md
+│   ├── CHANGELOG.md
+│   └── ContaSAT_Guia_de_Usuario.docx
+├── .gitignore
+└── README.md
+```
+
+---
+
+## Cómo funciona la descarga inteligente
+
+```
+¿Primera ejecución?
+  SÍ  →  01 Ene año actual  →  hoy
+  NO  →  (última fecha descargada − 1 día)  →  hoy
+
+¿CFDI ya descargado (UUID duplicado)?
+  →  Overwrite. Nunca se generan duplicados.
+```
 
 ---
 
 ## Requisitos
 
 - Windows 10 / 11 (64 bits)
-- Conexión a internet (solo durante la instalación y las descargas del SAT)
+- Conexión a internet
 - RFC activo ante el SAT
-- e.firma (FIEL) vigente con archivos `.cer` y `.key`
+- e.firma (FIEL) vigente — archivos `.cer` y `.key`
 
-Python se instala automáticamente si no está presente.
-
----
-
-## Estructura del repositorio
-
-```
-contadorcito/
-├── instalar_contasat.bat        # Instalador — único archivo que el usuario descarga
-├── src/
-│   ├── descarga_cfdi_sat.py     # Motor principal de descarga
-│   ├── contasat_gui.html        # Interfaz gráfica
-│   └── instalar_dependencias.py # Instalador de librerías Python
-├── docs/
-│   └── ContaSAT_Guia_de_Usuario.docx
-└── README.md
-```
+Python 3.10+ se instala automáticamente si no está presente.
 
 ---
 
-## Uso después de instalar
+## Uso manual (sin instalador)
 
 ```bash
-# Descarga automática (rango inteligente)
-python descarga_cfdi_sat.py
+# Instalar dependencias
+pip install pywebview cfdiclient openpyxl lxml schedule
 
-# Período específico
-python descarga_cfdi_sat.py --inicio 2025-01-01 --fin 2025-12-31
+# Ejecutar la aplicación
+python src/app.py
 
-# Modo scheduler (corre en segundo plano)
-python descarga_cfdi_sat.py --auto
+# Descarga por línea de comandos (sin GUI)
+python src/descarga_cfdi_sat.py --auto
 ```
 
 ---
 
 ## Seguridad
 
-Los archivos de e.firma (`.cer`, `.key`) y la contraseña **nunca se transmiten** a ningún servidor externo distinto al del SAT. Todo el procesamiento es local en tu equipo.
-
-No incluyas tus archivos de e.firma ni tu contraseña en este repositorio.
+Los archivos de e.firma y la contraseña nunca se transmiten a ningún servidor externo distinto al del SAT. Todo el procesamiento es local.
 
 ---
 
-## Licencia
+## Documentación
 
-Uso personal. Consulta a un contador público certificado antes de usar los reportes generados en declaraciones fiscales.
+- [Guía de instalación detallada](docs/INSTALL.md)
+- [Historial de cambios](docs/CHANGELOG.md)
+- [Guía de usuario completa](docs/ContaSAT_Guia_de_Usuario.docx)

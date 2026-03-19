@@ -1970,5 +1970,58 @@ function showToast(msg, type = 'info') {
 // Fecha actual en campos date
 document.getElementById('fecha-fin').value = new Date().toISOString().slice(0,10);
 </script>
+
+<script>
+// ── PyWebView bridge ──────────────────────────────────────
+// Reemplaza llamadas directas con la API real de PyWebView
+function api(method, args={}) {
+  return new Promise(resolve => {
+    const call = () => {
+      if (window.pywebview && window.pywebview.api && window.pywebview.api[method]) {
+        window.pywebview.api[method](args).then(resolve)
+          .catch(e => { console.error(e); resolve({ok:false, msg:String(e)}); });
+      } else {
+        // Stub para desarrollo en navegador
+        console.warn('PyWebView no disponible - stub:', method, args);
+        resolve({ok:true, msg:'[stub] '+method, data:[], ejecuciones:[], uuids:[]});
+      }
+    };
+    if (document.readyState==='loading')
+      window.addEventListener('pywebviewready', call, {once:true});
+    else if (window.pywebview) call();
+    else window.addEventListener('pywebviewready', call, {once:true});
+  });
+}
+window.contasat = {
+  addLog(msg, level='info') {
+    const box = document.getElementById('log-box');
+    if (!box) return;
+    const d = document.createElement('div');
+    d.className = 'log-'+level;
+    d.textContent = new Date().toLocaleTimeString('es-MX')+'  '+msg;
+    box.appendChild(d); box.scrollTop = box.scrollHeight;
+  },
+  setProgress(pct) {
+    const b = document.getElementById('prog-bar');
+    if (b) b.style.width = pct+'%';
+  },
+  onEvent(event, data) {
+    if (event==='descarga_completada') {
+      document.getElementById('log-status').className='badge b-green';
+      document.getElementById('log-status').textContent='✓ Completado';
+      document.getElementById('btn-descarga').disabled=false;
+      toast(`${data.total} CFDIs — ${data.nuevos} nuevos, ${data.overwrite} overwrite`,'success');
+      cargarDashboard && cargarDashboard();
+    }
+    if (event==='descarga_error') {
+      document.getElementById('log-status').className='badge b-red';
+      document.getElementById('log-status').textContent='✗ Error';
+      document.getElementById('btn-descarga').disabled=false;
+      toast('Error: '+data.msg,'error');
+    }
+  }
+};
+</script>
+
 </body>
 </html>

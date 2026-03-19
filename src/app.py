@@ -16,23 +16,52 @@ import zipfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-# ── Auto-instalar dependencias ───────────────────────────────
-def _pip(pkg):
+# ── Auto-instalar y verificar dependencias ────────────────────
+def _pip(pkg, upgrade=False):
     import subprocess
-    subprocess.check_call([sys.executable, "-m", "pip", "install", pkg, "-q"])
+    cmd = [sys.executable, "-m", "pip", "install", pkg, "-q"]
+    if upgrade:
+        cmd.append("--upgrade")
+    subprocess.check_call(cmd)
 
-for _p in ["webview", "cfdiclient", "openpyxl", "lxml", "schedule"]:
+# Instalar paquetes base si no existen
+for _p, _pkg in [("webview", "pywebview"), ("cfdiclient", "cfdiclient>=1.5.9"),
+                  ("openpyxl", "openpyxl"), ("lxml", "lxml"), ("schedule", "schedule")]:
     try:
-        __import__(_p if _p != "webview" else "webview")
+        __import__(_p)
     except ImportError:
-        print(f"Instalando {_p}...")
-        _pip("pywebview" if _p == "webview" else _p)
+        print(f"Instalando {_pkg}...")
+        _pip(_pkg)
+
+# Verificar que cfdiclient tenga las clases necesarias
+# Si la version instalada es antigua, actualizarla automaticamente
+try:
+    from cfdiclient import (
+        Autenticacion, DescargaMasiva, Fiel,
+        SolicitaDescarga, VerificaSolicitudDescarga,
+    )
+except ImportError as e:
+    print(f"[INFO] cfdiclient incompleto ({e}). Actualizando...")
+    _pip("cfdiclient>=1.5.9", upgrade=True)
+    try:
+        from cfdiclient import (
+            Autenticacion, DescargaMasiva, Fiel,
+            SolicitaDescarga, VerificaSolicitudDescarga,
+        )
+        print("[OK] cfdiclient actualizado correctamente.")
+    except ImportError as e2:
+        import cfdiclient as _cfi
+        disponibles = [n for n in dir(_cfi) if not n.startswith("_")]
+        print(f"\n[ERROR CRITICO] cfdiclient no tiene las clases necesarias.")
+        print(f"  Version instalada : {getattr(_cfi, '__version__', 'desconocida')}")
+        print(f"  Clases disponibles: {disponibles}")
+        print(f"  Clases requeridas : Autenticacion, DescargaMasiva, Fiel, SolicitaDescarga, VerificaSolicitudDescarga")
+        print(f"\n  Solucion: ejecuta este comando en tu terminal:")
+        print(f"  pip install cfdiclient --upgrade --force-reinstall")
+        input("\nPresiona Enter para cerrar...")
+        sys.exit(1)
 
 import webview
-from cfdiclient import (
-    Autenticacion, DescargaMasiva, Fiel,
-    SolicitaDescarga, VerificaSolicitudDescarga,
-)
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment
 

@@ -328,87 +328,115 @@ def _descarga_worker(inicio: str, fin: str, tipo_cfdi: str):
 
             _emit(f"Solicitando CFDIs {tipo.upper()} {fecha_ini} -> {fecha_fin}...", "info")
 
-            # ── Paso 1: Solicitar ───────────────────────────────
-            kwargs = dict(
-                fecha_inicial  = fecha_ini,
-                fecha_final    = fecha_fin,
-                tipo_solicitud = TipoDescargaMasivaTerceros.CFDI,
-            )
+            # ── Paso 1: Solicitar ────────────────────────────────
+            # Firma real:
+            # recover_comprobante_received_request(fecha_inicial, fecha_final,
+            #   rfc_receptor=None, rfc_emisor=None,
+            #   tipo_solicitud=CFDI, tipo_comprobante=None,
+            #   estado_comprobante=None, ...)
+            # EstadoComprobante.VIGENTE excluye cancelados (resuelve error 301)
+            try:
+                from satcfdi.pacs.sat import EstadoComprobante
+                estado_comp = EstadoComprobante.VIGENTE
+            except ImportError:
+                estado_comp = "1"   # "1" = Vigente segun SAT
+
             if tipo == "recibidas":
                 resp = _sat.recover_comprobante_received_request(
-                    rfc_receptor=_signer.rfc, **kwargs)
+                    fecha_inicial       = fecha_ini,
+                    fecha_final         = fecha_fin,
+                    rfc_receptor        = _signer.rfc,
+                    tipo_solicitud      = TipoDescargaMasivaTerceros.CFDI,
+                    estado_comprobante  = estado_comp,
+                )
             else:
                 resp = _sat.recover_comprobante_emitted_request(
-                    rfc_emisor=_signer.rfc, **kwargs)
+                    fecha_inicial       = fecha_ini,
+                    fecha_final         = fecha_fin,
+                    rfc_emisor          = _signer.rfc,
+                    tipo_solicitud      = TipoDescargaMasivaTerceros.CFDI,
+                    estado_comprobante  = estado_comp,
+                )
 
+            _emit(f"Respuesta SAT: {resp}", "info")
             id_solicitud = resp.get("IdSolicitud")
-            cod = resp.get("CodEstatus", "")
-            _emit(f"ID solicitud: {id_solicitud} | Codigo: {cod}", "info")
+            cod          = resp.get("CodEstatus", "")
 
             if not id_solicitud:
-                _emit(f"El SAT no devolvio ID de solicitud: {resp}", "error")
+                _emit(f"Error SAT codigo {cod}: {resp.get('Mensaje', 'Sin mensaje')}", "error")
                 continue
 
-            # ── Paso 2: Verificar hasta que este lista ──────────
-            _emit("Esperando que el SAT procese la solicitud...", "info")
+            _emit(f"ID solicitud: {id_solicitud} | Codigo: {cod}", "ok")
+
+            # ── Paso 2: Verificar ────────────────────────────────
+            _emit("Verificando estado de la solicitud...", "info")
+            import time
             paquetes = []
             for intento in range(200):
-                import time; time.sleep(30 if intento > 0 else 5)
-                status = _sat.recover_comprobante_status(id_solicitud)
-                estado = status.get("EstadoSolicitud", "")
-                paquetes = status.get("IdsPaquetes", [])
-                _emit(f"Intento {intento+1}: estado={estado} paquetes={len(paquetes)}", "info")
+                if intento > 0:
+                    time.sleep(30)
+                else:
+                    time.sleep(5)
 
-                if str(estado) == str(EstadoSolicitud.TERMINADA) or estado == "3":
-                    _emit(f"Solicitud lista. {len(paquetes)} paquete(s) disponibles.", "ok")
+                status  = _sat.recover_comprobante_status(id_solicitud)
+                estado  = status.get("EstadoSolicitud", "")
+                paquetes = status.get("IdsPaquetes", [])
+                n_cfdis  = status.get("NumeroCFDIs", 0)
+                _emit(f"Intento {intento+1}: estado={estado} paquetes={len(paquetes)} cfdis={n_cfdis}", "info")
+
+                if str(estado) == "3":   # Terminada
+                    _emit(f"Solicitud lista. {len(paquetes)} paquete(s).", "ok")
                     break
-                elif str(estado) == "5":
+                elif str(estado) == "5":  # Sin comprobantes
                     _emit("Sin CFDIs en el periodo indicado.", "warn")
                     paquetes = []
                     break
-                elif str(estado) in ["1", "2"]:
+                elif str(estado) in ["1", "2"]:  # En proceso
                     _progreso = int((paso + 0.3) / len(tipos) * 80)
                     continue
                 else:
-                    _emit(f"Error del SAT: estado={estado} codigo={status.get('CodEstatus','')}", "error")
+                    _emit(f"Estado inesperado: {estado} | {status}", "error")
                     paquetes = []
                     break
 
-            # ── Paso 3: Descargar paquetes ──────────────────────
+            # ── Paso 3: Descargar ────────────────────────────────
             n = 0
             for i, id_paquete in enumerate(paquetes):
                 _emit(f"Descargando paquete {i+1}/{len(paquetes)}: {id_paquete}", "info")
-                resp_dl, contenido_b64 = _sat.recover_comprobante_download(
-                    id_paquete=id_paquete)
+                try:
+                    # Firma real: recover_comprobante_download(id_paquete) -> (dict, str)
+                    resp_dict, contenido_b64 = _sat.recover_comprobante_download(id_paquete)
 
-                if not contenido_b64:
-                    _emit(f"Paquete vacio: {id_paquete}", "warn")
-                    continue
+                    if not contenido_b64:
+                        _emit(f"Paquete vacio: {id_paquete}", "warn")
+                        continue
 
-                data = base64.b64decode(contenido_b64)
-                ruta_zip = carp_zip / f"{id_paquete}.zip"
-                ruta_zip.write_bytes(data)
-                n += 1
+                    data     = base64.b64decode(contenido_b64)
+                    ruta_zip = carp_zip / f"{id_paquete}.zip"
+                    ruta_zip.write_bytes(data)
+                    n += 1
 
-                with zipfile.ZipFile(ruta_zip) as z:
-                    for nombre in [x for x in z.namelist() if x.lower().endswith(".xml")]:
-                        contenido = z.read(nombre)
-                        ruta_xml  = carp_xml / nombre
-                        ruta_xml.write_bytes(contenido)
-                        label = "Emitida" if tipo == "emitidas" else "Recibida"
-                        cfdi  = _parsear(ruta_xml, label)
-                        uuid  = cfdi.get("uuid", "")
-                        if uuid:
-                            if uuid in uuids: overwr += 1
-                            else: uuids.add(uuid); nuevos += 1
-                        todos.append(cfdi)
+                    with zipfile.ZipFile(ruta_zip) as z:
+                        for nombre in [x for x in z.namelist() if x.lower().endswith(".xml")]:
+                            contenido = z.read(nombre)
+                            ruta_xml  = carp_xml / nombre
+                            ruta_xml.write_bytes(contenido)
+                            label = "Emitida" if tipo == "emitidas" else "Recibida"
+                            cfdi  = _parsear(ruta_xml, label)
+                            uuid  = cfdi.get("uuid", "")
+                            if uuid:
+                                if uuid in uuids: overwr += 1
+                                else: uuids.add(uuid); nuevos += 1
+                            todos.append(cfdi)
 
-                _progreso = int((paso + 0.6 + i / max(len(paquetes), 1) * 0.4) / len(tipos) * 90)
+                    _progreso = int((paso + 0.6 + (i+1) / max(len(paquetes),1) * 0.4) / len(tipos) * 90)
 
-            if n == 0 and paquetes:
-                _emit(f"No se pudo descargar ningun paquete de {tipo.upper()}.", "warn")
-            elif n > 0:
-                _emit(f"{tipo.upper()}: {n} paquete(s) descargados.", "ok")
+                except Exception as de:
+                    _emit(f"Error descargando paquete {id_paquete}: {de}", "error")
+                    log.exception(f"Error paquete {id_paquete}")
+
+            if n > 0:
+                _emit(f"{tipo.upper()}: {n} paquete(s), {len([d for d in todos if d.get('tipo')==('Emitida' if tipo=='emitidas' else 'Recibida')])} CFDIs.", "ok")
 
         if todos:
             _emit("Generando reporte Excel...", "info")

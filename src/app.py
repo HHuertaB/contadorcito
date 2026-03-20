@@ -258,41 +258,153 @@ NS = {
     "tfd":   "http://www.sat.gob.mx/TimbreFiscalDigital",
 }
 
+# ── Catálogo UsoCFDI del SAT (Anexo 20 CFDI 4.0) ─────────────
+USO_CFDI_CAT = {
+    "G01": {"desc": "Adquisición de mercancias",               "tipo": "gasto"},
+    "G02": {"desc": "Devoluciones, descuentos o bonificaciones","tipo": "gasto"},
+    "G03": {"desc": "Gastos en general",                       "tipo": "gasto"},
+    "I01": {"desc": "Construcciones",                          "tipo": "gasto"},
+    "I02": {"desc": "Mobiliario y equipo de oficina",           "tipo": "gasto"},
+    "I03": {"desc": "Equipo de transporte",                    "tipo": "gasto"},
+    "I04": {"desc": "Equipo de computo y accesorios",          "tipo": "gasto"},
+    "I05": {"desc": "Dados, troqueles y herramental",          "tipo": "gasto"},
+    "I06": {"desc": "Comunicaciones telefónicas",              "tipo": "gasto"},
+    "I07": {"desc": "Comunicaciones satelitales",              "tipo": "gasto"},
+    "I08": {"desc": "Otra maquinaria y equipo",                "tipo": "gasto"},
+    "D01": {"desc": "Honorarios médicos y gastos hospitalarios","tipo": "gasto"},
+    "D02": {"desc": "Gastos médicos por incapacidad",          "tipo": "gasto"},
+    "D03": {"desc": "Gastos funerales",                        "tipo": "gasto"},
+    "D04": {"desc": "Donativos",                               "tipo": "gasto"},
+    "D05": {"desc": "Intereses hipotecarios",                  "tipo": "gasto"},
+    "D06": {"desc": "Aportaciones voluntarias al SAR",         "tipo": "gasto"},
+    "D07": {"desc": "Primas por seguros de gastos médicos",    "tipo": "gasto"},
+    "D08": {"desc": "Gastos de transportación escolar",        "tipo": "gasto"},
+    "D09": {"desc": "Depósitos en cuentas para el ahorro",     "tipo": "gasto"},
+    "D10": {"desc": "Pagos por servicios educativos",          "tipo": "gasto"},
+    "CN01":{"desc": "Nómina",                                  "tipo": "gasto"},
+    "CP01":{"desc": "Pagos",                                   "tipo": "neutro"},
+    "S01": {"desc": "Sin efectos fiscales",                    "tipo": "neutro"},
+}
+
+# Mapeo automático UsoCFDI → categoría ContaSAT
+USO_A_CATEGORIA = {
+    "G01": "compras",  "G02": "compras",  "G03": "compras",
+    "I01": "compras",  "I02": "compras",  "I03": "compras",
+    "I04": "compras",  "I05": "compras",  "I06": "compras",
+    "I07": "compras",  "I08": "compras",
+    "D01": "gastos_med","D02": "gastos_med","D07": "gastos_med",
+    "D03": "compras",  "D04": "compras",  "D05": "compras",
+    "D06": "nomina",   "D08": "compras",  "D09": "compras",
+    "D10": "compras",  "CN01":"nomina",
+    "CP01":"sin_cat",  "S01": "sin_cat",
+}
+
+
 def _parsear(ruta: Path, tipo: str) -> dict:
+    """
+    Parsea un XML de CFDI 3.3 o 4.0.
+    Soporta namespace con y sin prefijo (el SAT usa ambos).
+    USO_CFDI_CAT y USO_A_CATEGORIA deben estar definidos antes de llamar.
+    """
     try:
-        root = ET.parse(ruta).getroot()
-        def nodo(tag):
-            return root.find(f"cfdi:{tag}", NS) or root.find(f"cfdi3:{tag}", NS)
-        def a(el, attr): return el.get(attr, "") if el is not None else ""
+        tree = ET.parse(ruta)
+        root = tree.getroot()
+
+        # El namespace puede venir con o sin el URI completo
+        # Ejemplo: {http://www.sat.gob.mx/cfd/4}Comprobante  o  cfdi:Comprobante
+        tag = root.tag
+        ns_cfdi = ""
+        if "{" in tag:
+            ns_cfdi = tag.split("}")[0] + "}"   # e.g. "{http://www.sat.gob.mx/cfd/4}"
+
+        def nodo(nombre):
+            """Busca un nodo hijo directo con o sin namespace."""
+            # Con namespace completo
+            el = root.find(f"{ns_cfdi}{nombre}")
+            if el is not None:
+                return el
+            # Sin namespace (algunos CFDIs lo omiten)
+            el = root.find(nombre)
+            if el is not None:
+                return el
+            # Con prefijos registrados en NS
+            for pref in ("cfdi", "cfdi3"):
+                el = root.find(f"{pref}:{nombre}", NS)
+                if el is not None:
+                    return el
+            return None
+
+        def nodo_deep(path):
+            """Busca un nodo en profundidad probando variantes de namespace."""
+            for ns_uri in (ns_cfdi, ""):
+                partes = path.split("/")
+                el = root
+                for p in partes:
+                    el = el.find(f"{ns_uri}{p}") if el is not None else None
+                if el is not None:
+                    return el
+            # Fallback xpath con prefijos
+            for pref in ("cfdi", "cfdi3"):
+                path_p = "/".join(f"{pref}:{p}" for p in path.split("/"))
+                el = root.find(path_p, NS)
+                if el is not None:
+                    return el
+            return None
+
+        def tfd_find():
+            """Busca el TimbreFiscalDigital en cualquier namespace."""
+            NS_TFD = "http://www.sat.gob.mx/TimbreFiscalDigital"
+            el = root.find(f".//{{{NS_TFD}}}TimbreFiscalDigital")
+            if el is not None:
+                return el
+            return root.find(".//tfd:TimbreFiscalDigital", NS)
+
+        def a(el, attr):
+            return el.get(attr, "") if el is not None else ""
+
         emisor   = nodo("Emisor")
         receptor = nodo("Receptor")
-        tfd      = root.find(".//tfd:TimbreFiscalDigital", NS)
-        concepto = (root.find("cfdi:Conceptos/cfdi:Concepto", NS)
-                    or root.find("cfdi3:Conceptos/cfdi3:Concepto", NS))
+        tfd      = tfd_find()
+        concepto = nodo_deep("Conceptos/Concepto")
+
+        # UUID puede estar en el TimbreFiscalDigital o como atributo del Comprobante
+        uuid = a(tfd, "UUID") or root.get("Folio", "")
+
         fecha = root.get("Fecha", "")
-        try: total = float(root.get("Total", 0))
-        except: total = 0.0
+        try:
+            total = float(root.get("Total", 0) or 0)
+        except (ValueError, TypeError):
+            total = 0.0
+
+        uso_cfdi     = a(receptor, "UsoCFDI")
+        uso_cfdi_desc = USO_CFDI_CAT.get(uso_cfdi, {}).get("desc", "")
+
         return {
-            "tipo": tipo, "uuid": a(tfd, "UUID"),
-            "fecha": fecha[:10], "serie": root.get("Serie", ""),
-            "folio": root.get("Folio", ""),
-            "rfc_emisor": a(emisor, "Rfc"), "nombre_emisor": a(emisor, "Nombre"),
-            "rfc_receptor": a(receptor, "Rfc"), "nombre_receptor": a(receptor, "Nombre"),
-            "uso_cfdi": a(receptor, "UsoCFDI"), "descripcion": a(concepto, "Descripcion"),
-            "subtotal": root.get("SubTotal", ""), "total": total,
-            "moneda": root.get("Moneda", "MXN"),
-            "tipo_comp": root.get("TipoDeComprobante", ""),
+            "tipo":             tipo,
+            "uuid":             uuid,
+            "fecha":            fecha[:10] if fecha else "",
+            "serie":            root.get("Serie", ""),
+            "folio":            root.get("Folio", ""),
+            "rfc_emisor":       a(emisor,   "Rfc"),
+            "nombre_emisor":    a(emisor,   "Nombre"),
+            "rfc_receptor":     a(receptor, "Rfc"),
+            "nombre_receptor":  a(receptor, "Nombre"),
+            "uso_cfdi":         uso_cfdi,
+            "uso_cfdi_desc":    uso_cfdi_desc,
+            "descripcion":      a(concepto, "Descripcion"),
+            "subtotal":         root.get("SubTotal", ""),
+            "total":            total,
+            "moneda":           root.get("Moneda", "MXN"),
+            "tipo_comprobante": root.get("TipoDeComprobante", ""),
             "metodo_pago":      root.get("MetodoPago", ""),
             "forma_pago":       root.get("FormaPago", ""),
-            "tipo_comprobante": root.get("TipoDeComprobante", ""),
-            "uso_cfdi":         a(receptor, "UsoCFDI"),
-            "uso_cfdi_desc":    USO_CFDI_CAT.get(a(receptor, "UsoCFDI"), {}).get("desc", ""),
             "regimen_emisor":   a(emisor,   "RegimenFiscal"),
             "clave_prod_serv":  a(concepto, "ClaveProdServ"),
             "archivo":          ruta.name,
         }
     except Exception as e:
-        return {"tipo": tipo, "archivo": ruta.name, "error": str(e), "total": 0}
+        log.error(f"Error parseando {ruta}: {e}")
+        return {"tipo": tipo, "archivo": str(ruta.name), "error": str(e), "total": 0}
 
 def _emit(msg: str, level: str = "info"):
     log.info(msg)
@@ -1338,47 +1450,6 @@ def get_log():
         return jsonify({"ok": False, "msg": str(e)})
 
 
-# ── Catálogo UsoCFDI del SAT (Anexo 20 CFDI 4.0) ─────────────
-USO_CFDI_CAT = {
-    "G01": {"desc": "Adquisición de mercancias",               "tipo": "gasto"},
-    "G02": {"desc": "Devoluciones, descuentos o bonificaciones","tipo": "gasto"},
-    "G03": {"desc": "Gastos en general",                       "tipo": "gasto"},
-    "I01": {"desc": "Construcciones",                          "tipo": "gasto"},
-    "I02": {"desc": "Mobiliario y equipo de oficina",           "tipo": "gasto"},
-    "I03": {"desc": "Equipo de transporte",                    "tipo": "gasto"},
-    "I04": {"desc": "Equipo de computo y accesorios",          "tipo": "gasto"},
-    "I05": {"desc": "Dados, troqueles y herramental",          "tipo": "gasto"},
-    "I06": {"desc": "Comunicaciones telefónicas",              "tipo": "gasto"},
-    "I07": {"desc": "Comunicaciones satelitales",              "tipo": "gasto"},
-    "I08": {"desc": "Otra maquinaria y equipo",                "tipo": "gasto"},
-    "D01": {"desc": "Honorarios médicos y gastos hospitalarios","tipo": "gasto"},
-    "D02": {"desc": "Gastos médicos por incapacidad",          "tipo": "gasto"},
-    "D03": {"desc": "Gastos funerales",                        "tipo": "gasto"},
-    "D04": {"desc": "Donativos",                               "tipo": "gasto"},
-    "D05": {"desc": "Intereses hipotecarios",                  "tipo": "gasto"},
-    "D06": {"desc": "Aportaciones voluntarias al SAR",         "tipo": "gasto"},
-    "D07": {"desc": "Primas por seguros de gastos médicos",    "tipo": "gasto"},
-    "D08": {"desc": "Gastos de transportación escolar",        "tipo": "gasto"},
-    "D09": {"desc": "Depósitos en cuentas para el ahorro",     "tipo": "gasto"},
-    "D10": {"desc": "Pagos por servicios educativos",          "tipo": "gasto"},
-    "CN01":{"desc": "Nómina",                                  "tipo": "gasto"},
-    "CP01":{"desc": "Pagos",                                   "tipo": "neutro"},
-    "S01": {"desc": "Sin efectos fiscales",                    "tipo": "neutro"},
-}
-
-# Mapeo automático UsoCFDI → categoría ContaSAT
-USO_A_CATEGORIA = {
-    "G01": "compras",  "G02": "compras",  "G03": "compras",
-    "I01": "compras",  "I02": "compras",  "I03": "compras",
-    "I04": "compras",  "I05": "compras",  "I06": "compras",
-    "I07": "compras",  "I08": "compras",
-    "D01": "gastos_med","D02": "gastos_med","D07": "gastos_med",
-    "D03": "compras",  "D04": "compras",  "D05": "compras",
-    "D06": "nomina",   "D08": "compras",  "D09": "compras",
-    "D10": "compras",  "CN01":"nomina",
-    "CP01":"sin_cat",  "S01": "sin_cat",
-}
-
 # ── Conciliación ──────────────────────────────────────────────
 CONCIL_FILE = DATA_DIR / "conciliacion.json"
 
@@ -1575,6 +1646,27 @@ def exportar_conciliacion_excel():
         return jsonify({"ok": True, "msg": f"Excel guardado: {ruta}", "ruta": str(ruta)})
     except Exception as e:
         return jsonify({"ok": False, "msg": str(e)})
+
+
+@app.route("/api/diagnostico/xml", methods=["GET"])
+def diagnostico_xml():
+    """Muestra los primeros 5 XMLs parseados para verificar que los campos se lean bien."""
+    xmls      = list(DATA_DIR.rglob("*.xml"))[:10]
+    resultado = []
+    for x in xmls:
+        p = _parsear(x, "rec" if "recibidas" in x.parts else "emi")
+        resultado.append({
+            "archivo":       p.get("archivo"),
+            "error":         p.get("error"),
+            "uuid":          p.get("uuid", "")[:12],
+            "nombre_emisor": p.get("nombre_emisor"),
+            "rfc_emisor":    p.get("rfc_emisor"),
+            "uso_cfdi":      p.get("uso_cfdi"),
+            "uso_cfdi_desc": p.get("uso_cfdi_desc"),
+            "total":         p.get("total"),
+            "tipo_comp":     p.get("tipo_comprobante"),
+        })
+    return jsonify({"total_xmls": len(list(DATA_DIR.rglob("*.xml"))), "muestra": resultado})
 
 # ── Arranque ──────────────────────────────────────────────────
 if __name__ == "__main__":

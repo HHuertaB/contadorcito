@@ -69,6 +69,43 @@ _log_lines   = []
 _progreso    = 0
 _descargando = False
 
+# ── Archivo de solicitudes pendientes ────────────────────────
+PENDING_FILE = DATA_DIR / "solicitudes_pendientes.json"
+
+def _load_pending():
+    if PENDING_FILE.exists():
+        try:
+            return json.loads(PENDING_FILE.read_text("utf-8"))
+        except Exception:
+            pass
+    return []
+
+def _save_pending(pendientes: list):
+    PENDING_FILE.write_text(
+        json.dumps(pendientes, indent=2, ensure_ascii=False), "utf-8"
+    )
+
+def _add_pending(id_solicitud: str, tipo: str, fecha_ini: str,
+                 fecha_fin: str, carp_zip: str, carp_xml: str):
+    pendientes = _load_pending()
+    # Evitar duplicados
+    pendientes = [p for p in pendientes if p.get("id_solicitud") != id_solicitud]
+    pendientes.append({
+        "id_solicitud": id_solicitud,
+        "tipo":         tipo,
+        "fecha_ini":    fecha_ini,
+        "fecha_fin":    fecha_fin,
+        "carp_zip":     carp_zip,
+        "carp_xml":     carp_xml,
+        "creada":       datetime.datetime.now().isoformat(),
+    })
+    _save_pending(pendientes)
+
+def _remove_pending(id_solicitud: str):
+    pendientes = [p for p in _load_pending()
+                  if p.get("id_solicitud") != id_solicitud]
+    _save_pending(pendientes)
+
 # ── Config ────────────────────────────────────────────────────
 CFG_DEFAULT = {
     "rfc": "", "fiel_cer": "", "fiel_key": "",
@@ -286,6 +323,382 @@ def limpiar_historial():
     except Exception as e:
         return jsonify({"ok": False, "msg": str(e)})
 
+# ── Solicitudes pendientes ────────────────────────────────────
+@app.route("/api/pendientes", methods=["GET"])
+def get_pendientes():
+    return jsonify({"pendientes": _load_pending()})
+
+@app.route("/api/pendientes/reanudar", methods=["POST"])
+def reanudar_pendiente():
+    global _descargando
+    if not _sat:
+        return jsonify({"ok": False, "msg": "Carga tu e.firma primero."})
+    if _descargando:
+        return jsonify({"ok": False, "msg": "Ya hay una descarga en proceso."})
+    d            = request.get_json() or {}
+    id_solicitud = d.get("id_solicitud")
+    pendientes   = _load_pending()
+    solicitud    = next((p for p in pendientes if p["id_solicitud"] == id_solicitud), None)
+    if not solicitud:
+        return jsonify({"ok": False, "msg": "Solicitud no encontrada."})
+    threading.Thread(
+        target=_reanudar_worker,
+        args=(solicitud,),
+        daemon=True,
+    ).start()
+    return jsonify({"ok": True, "msg": f"Reanudando solicitud {id_solicitud}..."})
+
+@app.route("/api/pendientes/cancelar", methods=["POST"])
+def cancelar_pendiente():
+    id_solicitud = (request.get_json() or {}).get("id_solicitud")
+    _remove_pending(id_solicitud)
+    return jsonify({"ok": True, "msg": "Solicitud eliminada del registro."})
+
+@app.route("/api/plan/estado", methods=["GET"])
+def get_plan_estado():
+    """Devuelve el plan de descarga guardado si existe."""
+    plan_file = DATA_DIR / "plan_descarga.json"
+    if not plan_file.exists():
+        return jsonify({"tiene_plan": False})
+    try:
+        plan = json.loads(plan_file.read_text("utf-8"))
+        pendientes = [p for p in plan if p["estado"] in ("pendiente", "en_proceso")]
+        completados = [p for p in plan if p["estado"] == "completado"]
+        return jsonify({
+            "tiene_plan":   True,
+            "total":        len(plan),
+            "pendientes":   len(pendientes),
+            "completados":  len(completados),
+            "bloques":      plan,
+        })
+    except Exception as e:
+        return jsonify({"tiene_plan": False, "error": str(e)})
+
+@app.route("/api/plan/reanudar", methods=["POST"])
+def reanudar_plan():
+    """Reanuda el plan completo desde el primer bloque no completado."""
+    global _descargando
+    if not _sat:
+        return jsonify({"ok": False, "msg": "Carga tu e.firma primero."})
+    if _descargando:
+        return jsonify({"ok": False, "msg": "Ya hay una descarga en proceso."})
+    plan_file = DATA_DIR / "plan_descarga.json"
+    if not plan_file.exists():
+        return jsonify({"ok": False, "msg": "No hay plan guardado."})
+    plan = json.loads(plan_file.read_text("utf-8"))
+    threading.Thread(
+        target=_reanudar_plan_worker,
+        args=(plan, plan_file),
+        daemon=True,
+    ).start()
+    return jsonify({"ok": True, "msg": "Reanudando plan de descarga..."})
+
+@app.route("/api/plan/cancelar", methods=["POST"])
+def cancelar_plan():
+    plan_file = DATA_DIR / "plan_descarga.json"
+    if plan_file.exists():
+        plan_file.unlink()
+    return jsonify({"ok": True, "msg": "Plan cancelado."})
+
+def _reanudar_plan_worker(plan: list, plan_file: Path):
+    """Reanuda todos los bloques pendientes o en_proceso del plan."""
+    global _progreso, _descargando
+    _descargando = True
+    _progreso    = 0
+    _log_lines.clear()
+
+    hist   = _load_hist()
+    uuids  = set(hist.get("uuids", []))
+    todos  = []
+    nuevos = overwr = 0
+
+    bloques_pendientes = [p for p in plan if p["estado"] in ("pendiente", "en_proceso")]
+    total = len(bloques_pendientes)
+    _emit(f"Reanudando plan: {total} bloque(s) pendiente(s) de {len(plan)} totales.", "info")
+
+    try:
+        from satcfdi.pacs.sat import EstadoComprobante
+        estado_comp = EstadoComprobante.VIGENTE
+    except ImportError:
+        estado_comp = "1"
+
+    import time
+
+    def _guardar_plan():
+        plan_file.write_text(json.dumps(plan, indent=2, ensure_ascii=False), "utf-8")
+
+    try:
+        for idx, item in enumerate(bloques_pendientes, 1):
+            tipo       = item["tipo"]
+            bloque_ini = datetime.date.fromisoformat(item["fecha_ini"])
+            bloque_fin = datetime.date.fromisoformat(item["fecha_fin"])
+            carp_zip   = Path(item["carp_zip"])
+            carp_xml   = Path(item["carp_xml"])
+            carp_zip.mkdir(parents=True, exist_ok=True)
+            carp_xml.mkdir(parents=True, exist_ok=True)
+
+            _emit(f"[{idx}/{total}] {tipo.upper()} {bloque_ini} -> {bloque_fin}...", "info")
+            item["estado"] = "en_proceso"
+            _guardar_plan()
+
+            # Si ya tiene ID de solicitud, retomar verificacion
+            id_solicitud = item.get("id_solicitud")
+            paquetes = []
+
+            if id_solicitud:
+                _emit(f"Retomando solicitud existente: {id_solicitud}", "info")
+            else:
+                # Crear nueva solicitud para este bloque
+                try:
+                    if tipo == "recibidas":
+                        resp = _sat.recover_comprobante_received_request(
+                            fecha_inicial      = bloque_ini,
+                            fecha_final        = bloque_fin,
+                            rfc_receptor       = _signer.rfc,
+                            tipo_solicitud     = TipoDescargaMasivaTerceros.CFDI,
+                            estado_comprobante = estado_comp,
+                        )
+                    else:
+                        resp = _sat.recover_comprobante_emitted_request(
+                            fecha_inicial      = bloque_ini,
+                            fecha_final        = bloque_fin,
+                            rfc_emisor         = _signer.rfc,
+                            tipo_solicitud     = TipoDescargaMasivaTerceros.CFDI,
+                            estado_comprobante = estado_comp,
+                        )
+                    id_solicitud = resp.get("IdSolicitud")
+                    if not id_solicitud:
+                        _emit(f"Error SAT: {resp.get('Mensaje','')}", "error")
+                        item["estado"] = "error"
+                        _guardar_plan()
+                        continue
+                    item["id_solicitud"] = id_solicitud
+                    _guardar_plan()
+                    _emit(f"Nueva solicitud: {id_solicitud}", "ok")
+                except Exception as re:
+                    _emit(f"Error al solicitar: {re}", "error")
+                    item["estado"] = "error"
+                    _guardar_plan()
+                    continue
+
+            # Verificar hasta que este lista
+            for intento in range(200):
+                time.sleep(30 if intento > 0 else 5)
+                status   = _sat.recover_comprobante_status(id_solicitud)
+                estado   = status.get("EstadoSolicitud", "")
+                paquetes = status.get("IdsPaquetes", [])
+                n_cfdis  = status.get("NumeroCFDIs", 0)
+                _emit(f"Verificando... estado={estado} paquetes={len(paquetes)} cfdis={n_cfdis}", "info")
+                _progreso = int((idx - 1 + 0.5) / total * 90)
+
+                if str(estado) == "3":
+                    _emit(f"Listo. {len(paquetes)} paquete(s).", "ok")
+                    break
+                elif str(estado) == "5":
+                    _emit("Sin CFDIs en este bloque.", "warn")
+                    paquetes = []
+                    break
+                elif str(estado) in ["1", "2"]:
+                    continue
+                else:
+                    _emit(f"Estado inesperado: {estado}", "error")
+                    paquetes = []
+                    break
+
+            # Descargar paquetes
+            for i, id_paquete in enumerate(paquetes):
+                _emit(f"Descargando paquete {i+1}/{len(paquetes)}: {id_paquete}", "info")
+                try:
+                    resp_dict, contenido_b64 = _sat.recover_comprobante_download(id_paquete)
+                    if not contenido_b64:
+                        continue
+                    data = base64.b64decode(contenido_b64)
+                    ruta_zip = carp_zip / f"{id_paquete}.zip"
+                    ruta_zip.write_bytes(data)
+                    with zipfile.ZipFile(ruta_zip) as z:
+                        for nombre in [x for x in z.namelist() if x.lower().endswith(".xml")]:
+                            contenido = z.read(nombre)
+                            ruta_xml  = carp_xml / nombre
+                            ruta_xml.write_bytes(contenido)
+                            label = "Emitida" if tipo == "emitidas" else "Recibida"
+                            cfdi  = _parsear(ruta_xml, label)
+                            uuid  = cfdi.get("uuid", "")
+                            if uuid:
+                                if uuid in uuids: overwr += 1
+                                else: uuids.add(uuid); nuevos += 1
+                            todos.append(cfdi)
+                except Exception as de:
+                    _emit(f"Error paquete {id_paquete}: {de}", "error")
+
+            item["estado"] = "completado"
+            _guardar_plan()
+            _remove_pending(id_solicitud)
+            _progreso = int(idx / total * 90)
+            _emit(f"Bloque {idx}/{total} completado.", "ok")
+
+        # Reporte final
+        if todos:
+            _emit("Generando reporte Excel...", "info")
+            hoy = datetime.date.today()
+            _generar_excel(todos, DATA_DIR / "reportes", hoy.replace(day=1), hoy)
+
+        hist["primera_ejecucion"] = False
+        hist["ultima_fecha"]      = str(datetime.date.today())
+        hist["uuids"]             = list(uuids)
+        hist["ejecuciones"].append({
+            "fecha":  datetime.datetime.now().isoformat(),
+            "inicio": plan[0]["fecha_ini"] if plan else "",
+            "fin":    plan[-1]["fecha_fin"] if plan else "",
+            "total":  len(todos), "nuevos": nuevos, "overwrite": overwr,
+        })
+        _save_hist(hist)
+
+        # Si todos los bloques estan completados, eliminar el plan
+        if all(p["estado"] == "completado" for p in plan):
+            plan_file.unlink(missing_ok=True)
+
+        _progreso = 100
+        _emit(f"COMPLETADO: {len(todos)} CFDIs | {nuevos} nuevos | {overwr} overwrite", "ok")
+
+    except Exception as e:
+        _emit(f"Error inesperado: {e}", "error")
+        log.exception("Error en reanudar plan worker")
+    finally:
+        _descargando = False
+
+def _dividir_en_trimestres(fecha_ini: datetime.date,
+                            fecha_fin: datetime.date) -> list:
+    """
+    El SAT no acepta rangos mayores a 3 meses por solicitud.
+    Divide cualquier rango en bloques de maximo 3 meses.
+    """
+    bloques = []
+    actual  = fecha_ini
+    while actual <= fecha_fin:
+        # Fin del bloque = 3 meses despues - 1 dia, sin exceder fecha_fin
+        mes_fin = actual.month + 2          # +2 porque vamos a fin del 3er mes
+        anio_fin = actual.year + (mes_fin - 1) // 12
+        mes_fin  = ((mes_fin - 1) % 12) + 1
+        # Ultimo dia del mes de fin
+        import calendar
+        ultimo_dia = calendar.monthrange(anio_fin, mes_fin)[1]
+        fin_bloque = datetime.date(anio_fin, mes_fin, ultimo_dia)
+        fin_bloque = min(fin_bloque, fecha_fin)
+        bloques.append((actual, fin_bloque))
+        actual = fin_bloque + datetime.timedelta(days=1)
+    return bloques
+    """
+    Retoma una solicitud ya enviada al SAT sin volver a crearla.
+    Solo verifica el estado y descarga los paquetes cuando esten listos.
+    """
+    global _progreso, _descargando
+    _descargando = True
+    _progreso    = 0
+    _log_lines.clear()
+
+    id_solicitud = solicitud["id_solicitud"]
+    tipo         = solicitud["tipo"]
+    fecha_ini    = solicitud["fecha_ini"]
+    fecha_fin    = solicitud["fecha_fin"]
+    carp_zip     = Path(solicitud["carp_zip"])
+    carp_xml     = Path(solicitud["carp_xml"])
+    carp_zip.mkdir(parents=True, exist_ok=True)
+    carp_xml.mkdir(parents=True, exist_ok=True)
+
+    hist   = _load_hist()
+    uuids  = set(hist.get("uuids", []))
+    todos  = []
+    nuevos = overwr = 0
+
+    _emit(f"Reanudando solicitud {tipo.upper()} — ID: {id_solicitud}", "info")
+    _emit(f"Período: {fecha_ini} -> {fecha_fin}", "info")
+
+    try:
+        import time
+        paquetes = []
+        for intento in range(200):
+            if intento > 0:
+                time.sleep(30)
+            else:
+                time.sleep(3)
+
+            status   = _sat.recover_comprobante_status(id_solicitud)
+            estado   = status.get("EstadoSolicitud", "")
+            paquetes = status.get("IdsPaquetes", [])
+            n_cfdis  = status.get("NumeroCFDIs", 0)
+            _emit(f"Intento {intento+1}: estado={estado} paquetes={len(paquetes)} cfdis={n_cfdis}", "info")
+            _progreso = min(10 + intento * 2, 60)
+
+            if str(estado) == "3":
+                _emit(f"Solicitud lista. {len(paquetes)} paquete(s).", "ok")
+                break
+            elif str(estado) == "5":
+                _emit("Sin CFDIs en el periodo.", "warn")
+                _remove_pending(id_solicitud)
+                _descargando = False
+                return
+            elif str(estado) in ["1", "2"]:
+                continue
+            else:
+                _emit(f"Estado inesperado: {estado}", "error")
+                _descargando = False
+                return
+
+        # Descargar paquetes
+        n = 0
+        for i, id_paquete in enumerate(paquetes):
+            _emit(f"Descargando paquete {i+1}/{len(paquetes)}: {id_paquete}", "info")
+            try:
+                resp_dict, contenido_b64 = _sat.recover_comprobante_download(id_paquete)
+                if not contenido_b64:
+                    _emit(f"Paquete vacio: {id_paquete}", "warn")
+                    continue
+                data = base64.b64decode(contenido_b64)
+                ruta_zip = carp_zip / f"{id_paquete}.zip"
+                ruta_zip.write_bytes(data)
+                n += 1
+                with zipfile.ZipFile(ruta_zip) as z:
+                    for nombre in [x for x in z.namelist() if x.lower().endswith(".xml")]:
+                        contenido = z.read(nombre)
+                        ruta_xml  = carp_xml / nombre
+                        ruta_xml.write_bytes(contenido)
+                        label = "Emitida" if tipo == "emitidas" else "Recibida"
+                        cfdi  = _parsear(ruta_xml, label)
+                        uuid  = cfdi.get("uuid", "")
+                        if uuid:
+                            if uuid in uuids: overwr += 1
+                            else: uuids.add(uuid); nuevos += 1
+                        todos.append(cfdi)
+                _progreso = int(60 + (i+1) / max(len(paquetes),1) * 35)
+            except Exception as de:
+                _emit(f"Error paquete {id_paquete}: {de}", "error")
+
+        if todos:
+            _emit("Generando reporte Excel...", "info")
+            base = carp_zip.parent.parent
+            _generar_excel(todos, base / "reportes",
+                           datetime.date.fromisoformat(fecha_ini),
+                           datetime.date.fromisoformat(fecha_fin))
+
+        hist["primera_ejecucion"] = False
+        hist["ultima_fecha"]      = fecha_fin
+        hist["uuids"]             = list(uuids)
+        hist["ejecuciones"].append({
+            "fecha": datetime.datetime.now().isoformat(),
+            "inicio": fecha_ini, "fin": fecha_fin,
+            "total": len(todos), "nuevos": nuevos, "overwrite": overwr,
+        })
+        _save_hist(hist)
+        _remove_pending(id_solicitud)
+        _progreso = 100
+        _emit(f"COMPLETADO: {len(todos)} CFDIs | {nuevos} nuevos | {overwr} overwrite", "ok")
+
+    except Exception as e:
+        _emit(f"Error inesperado: {e}", "error")
+        log.exception("Error en reanudar worker")
+    finally:
+        _descargando = False
+
 # ── Descarga ──────────────────────────────────────────────────
 @app.route("/api/descarga/iniciar", methods=["POST"])
 def iniciar_descarga():
@@ -314,10 +727,190 @@ def _descarga_worker(inicio: str, fin: str, tipo_cfdi: str):
     uuids     = set(hist.get("uuids", []))
     todos     = []
     nuevos = overwr = 0
-    base  = DATA_DIR / str(fecha_ini.year) / f"{fecha_ini.month:02d}"
+
     tipos = []
     if tipo_cfdi in ("ambas", "recibidas"): tipos.append("recibidas")
     if tipo_cfdi in ("ambas", "emitidas"):  tipos.append("emitidas")
+
+    bloques     = _dividir_en_trimestres(fecha_ini, fecha_fin)
+    total_pasos = len(tipos) * len(bloques)
+    paso_actual = 0
+
+    _emit(f"Periodo: {fecha_ini} -> {fecha_fin}", "info")
+    _emit(f"Dividido en {len(bloques)} bloque(s) x {len(tipos)} tipo(s) = {total_pasos} solicitudes.", "info")
+
+    # Guardar el plan completo en disco desde el inicio
+    # Cada bloque pendiente se marca con estado "pendiente"
+    plan_file = DATA_DIR / "plan_descarga.json"
+    plan = []
+    for tipo in tipos:
+        for bi, bf in bloques:
+            base     = DATA_DIR / str(bi.year) / f"{bi.month:02d}"
+            carp_zip = str(base / tipo / "zips")
+            carp_xml = str(base / tipo / "xml")
+            plan.append({
+                "tipo":      tipo,
+                "fecha_ini": str(bi),
+                "fecha_fin": str(bf),
+                "carp_zip":  carp_zip,
+                "carp_xml":  carp_xml,
+                "estado":    "pendiente",   # pendiente | en_proceso | completado | error
+                "id_solicitud": None,
+            })
+    plan_file.write_text(json.dumps(plan, indent=2, ensure_ascii=False), "utf-8")
+
+    try:
+        from satcfdi.pacs.sat import EstadoComprobante
+        estado_comp = EstadoComprobante.VIGENTE
+    except ImportError:
+        estado_comp = "1"
+
+    import time
+
+    def _guardar_plan():
+        plan_file.write_text(json.dumps(plan, indent=2, ensure_ascii=False), "utf-8")
+
+    try:
+        for item in plan:
+            paso_actual += 1
+            tipo      = item["tipo"]
+            bloque_ini = datetime.date.fromisoformat(item["fecha_ini"])
+            bloque_fin = datetime.date.fromisoformat(item["fecha_fin"])
+            carp_zip   = Path(item["carp_zip"])
+            carp_xml   = Path(item["carp_xml"])
+            carp_zip.mkdir(parents=True, exist_ok=True)
+            carp_xml.mkdir(parents=True, exist_ok=True)
+
+            item["estado"] = "en_proceso"
+            _guardar_plan()
+
+            _emit(f"[{paso_actual}/{total_pasos}] {tipo.upper()} {bloque_ini} -> {bloque_fin}...", "info")
+
+            # ── Solicitar ────────────────────────────────────────
+            try:
+                if tipo == "recibidas":
+                    resp = _sat.recover_comprobante_received_request(
+                        fecha_inicial      = bloque_ini,
+                        fecha_final        = bloque_fin,
+                        rfc_receptor       = _signer.rfc,
+                        tipo_solicitud     = TipoDescargaMasivaTerceros.CFDI,
+                        estado_comprobante = estado_comp,
+                    )
+                else:
+                    resp = _sat.recover_comprobante_emitted_request(
+                        fecha_inicial      = bloque_ini,
+                        fecha_final        = bloque_fin,
+                        rfc_emisor         = _signer.rfc,
+                        tipo_solicitud     = TipoDescargaMasivaTerceros.CFDI,
+                        estado_comprobante = estado_comp,
+                    )
+            except Exception as re:
+                _emit(f"Error al solicitar: {re}", "error")
+                item["estado"] = "error"
+                _guardar_plan()
+                continue
+
+            id_solicitud = resp.get("IdSolicitud")
+            cod          = resp.get("CodEstatus", "")
+            if not id_solicitud:
+                _emit(f"Error SAT {cod}: {resp.get('Mensaje','')}", "error")
+                item["estado"] = "error"
+                _guardar_plan()
+                continue
+
+            item["id_solicitud"] = id_solicitud
+            _guardar_plan()
+            _add_pending(id_solicitud, tipo, str(bloque_ini),
+                         str(bloque_fin), str(carp_zip), str(carp_xml))
+            _emit(f"ID: {id_solicitud} | Codigo: {cod}", "ok")
+
+            # ── Verificar ────────────────────────────────────────
+            paquetes = []
+            for intento in range(200):
+                time.sleep(30 if intento > 0 else 5)
+                status   = _sat.recover_comprobante_status(id_solicitud)
+                estado   = status.get("EstadoSolicitud", "")
+                paquetes = status.get("IdsPaquetes", [])
+                n_cfdis  = status.get("NumeroCFDIs", 0)
+                _emit(f"Verificando... estado={estado} paquetes={len(paquetes)} cfdis={n_cfdis}", "info")
+                _progreso = int((paso_actual - 1 + 0.5) / total_pasos * 90)
+
+                if str(estado) == "3":
+                    _emit(f"Listo. {len(paquetes)} paquete(s).", "ok")
+                    break
+                elif str(estado) == "5":
+                    _emit("Sin CFDIs en este bloque.", "warn")
+                    paquetes = []
+                    break
+                elif str(estado) in ["1", "2"]:
+                    continue
+                else:
+                    _emit(f"Estado inesperado: {estado}", "error")
+                    paquetes = []
+                    break
+
+            # ── Descargar ────────────────────────────────────────
+            n = 0
+            for i, id_paquete in enumerate(paquetes):
+                _emit(f"Descargando paquete {i+1}/{len(paquetes)}: {id_paquete}", "info")
+                try:
+                    resp_dict, contenido_b64 = _sat.recover_comprobante_download(id_paquete)
+                    if not contenido_b64:
+                        _emit(f"Paquete vacio: {id_paquete}", "warn")
+                        continue
+                    data = base64.b64decode(contenido_b64)
+                    ruta_zip = carp_zip / f"{id_paquete}.zip"
+                    ruta_zip.write_bytes(data)
+                    n += 1
+                    with zipfile.ZipFile(ruta_zip) as z:
+                        for nombre in [x for x in z.namelist() if x.lower().endswith(".xml")]:
+                            contenido = z.read(nombre)
+                            ruta_xml  = carp_xml / nombre
+                            ruta_xml.write_bytes(contenido)
+                            label = "Emitida" if tipo == "emitidas" else "Recibida"
+                            cfdi  = _parsear(ruta_xml, label)
+                            uuid  = cfdi.get("uuid", "")
+                            if uuid:
+                                if uuid in uuids: overwr += 1
+                                else: uuids.add(uuid); nuevos += 1
+                            todos.append(cfdi)
+                except Exception as de:
+                    _emit(f"Error paquete {id_paquete}: {de}", "error")
+
+            if n > 0:
+                _emit(f"Bloque completado: {n} paquete(s).", "ok")
+
+            item["estado"] = "completado"
+            _guardar_plan()
+            _remove_pending(id_solicitud)
+            _progreso = int(paso_actual / total_pasos * 90)
+
+        # ── Reporte y guardar ────────────────────────────────────
+        if todos:
+            _emit("Generando reporte Excel...", "info")
+            base_rep = DATA_DIR / str(fecha_ini.year) / f"{fecha_ini.month:02d}"
+            _generar_excel(todos, base_rep / "reportes", fecha_ini, fecha_fin)
+
+        hist["primera_ejecucion"] = False
+        hist["ultima_fecha"]      = str(fecha_fin)
+        hist["uuids"]             = list(uuids)
+        hist["ejecuciones"].append({
+            "fecha":  datetime.datetime.now().isoformat(),
+            "inicio": str(fecha_ini), "fin": str(fecha_fin),
+            "total":  len(todos), "nuevos": nuevos, "overwrite": overwr,
+        })
+        _save_hist(hist)
+        # Plan completado — eliminar archivo
+        if plan_file.exists():
+            plan_file.unlink()
+        _progreso = 100
+        _emit(f"COMPLETADO: {len(todos)} CFDIs | {nuevos} nuevos | {overwr} overwrite", "ok")
+
+    except Exception as e:
+        _emit(f"Error inesperado: {e}", "error")
+        log.exception("Error en descarga worker")
+    finally:
+        _descargando = False
 
     try:
         for paso, tipo in enumerate(tipos):
@@ -367,6 +960,10 @@ def _descarga_worker(inicio: str, fin: str, tipo_cfdi: str):
                 continue
 
             _emit(f"ID solicitud: {id_solicitud} | Codigo: {cod}", "ok")
+
+            # Guardar solicitud en disco para poder reanudar si se cierra la app
+            _add_pending(id_solicitud, tipo, str(fecha_ini), str(fecha_fin),
+                         str(carp_zip), str(carp_xml))
 
             # ── Paso 2: Verificar ────────────────────────────────
             _emit("Verificando estado de la solicitud...", "info")
@@ -437,6 +1034,8 @@ def _descarga_worker(inicio: str, fin: str, tipo_cfdi: str):
 
             if n > 0:
                 _emit(f"{tipo.upper()}: {n} paquete(s), {len([d for d in todos if d.get('tipo')==('Emitida' if tipo=='emitidas' else 'Recibida')])} CFDIs.", "ok")
+            # Solicitud procesada — eliminar de pendientes
+            _remove_pending(id_solicitud)
 
         if todos:
             _emit("Generando reporte Excel...", "info")

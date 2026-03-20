@@ -259,44 +259,41 @@ NS = {
 }
 
 # ── Catálogo UsoCFDI del SAT (Anexo 20 CFDI 4.0) ─────────────
+# vista: "ingreso" = va a la pestaña Ingresos
+#         "gasto"  = va a la pestaña Gastos
+#         "neutro" = sin efectos fiscales / pagos
 USO_CFDI_CAT = {
-    "G01": {"desc": "Adquisición de mercancias",               "tipo": "gasto"},
-    "G02": {"desc": "Devoluciones, descuentos o bonificaciones","tipo": "gasto"},
-    "G03": {"desc": "Gastos en general",                       "tipo": "gasto"},
-    "I01": {"desc": "Construcciones",                          "tipo": "gasto"},
-    "I02": {"desc": "Mobiliario y equipo de oficina",           "tipo": "gasto"},
-    "I03": {"desc": "Equipo de transporte",                    "tipo": "gasto"},
-    "I04": {"desc": "Equipo de computo y accesorios",          "tipo": "gasto"},
-    "I05": {"desc": "Dados, troqueles y herramental",          "tipo": "gasto"},
-    "I06": {"desc": "Comunicaciones telefónicas",              "tipo": "gasto"},
-    "I07": {"desc": "Comunicaciones satelitales",              "tipo": "gasto"},
-    "I08": {"desc": "Otra maquinaria y equipo",                "tipo": "gasto"},
-    "D01": {"desc": "Honorarios médicos y gastos hospitalarios","tipo": "gasto"},
-    "D02": {"desc": "Gastos médicos por incapacidad",          "tipo": "gasto"},
-    "D03": {"desc": "Gastos funerales",                        "tipo": "gasto"},
-    "D04": {"desc": "Donativos",                               "tipo": "gasto"},
-    "D05": {"desc": "Intereses hipotecarios",                  "tipo": "gasto"},
-    "D06": {"desc": "Aportaciones voluntarias al SAR",         "tipo": "gasto"},
-    "D07": {"desc": "Primas por seguros de gastos médicos",    "tipo": "gasto"},
-    "D08": {"desc": "Gastos de transportación escolar",        "tipo": "gasto"},
-    "D09": {"desc": "Depósitos en cuentas para el ahorro",     "tipo": "gasto"},
-    "D10": {"desc": "Pagos por servicios educativos",          "tipo": "gasto"},
-    "CN01":{"desc": "Nómina",                                  "tipo": "gasto"},
-    "CP01":{"desc": "Pagos",                                   "tipo": "neutro"},
-    "S01": {"desc": "Sin efectos fiscales",                    "tipo": "neutro"},
+    "G01": {"desc": "Adquisición de mercancias",               "vista": "gasto"},
+    "G02": {"desc": "Devoluciones, descuentos o bonificaciones","vista": "gasto"},
+    "G03": {"desc": "Gastos en general",                       "vista": "gasto"},
+    "I01": {"desc": "Construcciones",                          "vista": "gasto"},
+    "I02": {"desc": "Mobiliario y equipo de oficina",           "vista": "gasto"},
+    "I03": {"desc": "Equipo de transporte",                    "vista": "gasto"},
+    "I04": {"desc": "Equipo de computo y accesorios",          "vista": "gasto"},
+    "I05": {"desc": "Dados, troqueles y herramental",          "vista": "gasto"},
+    "I06": {"desc": "Comunicaciones telefónicas",              "vista": "gasto"},
+    "I07": {"desc": "Comunicaciones satelitales",              "vista": "gasto"},
+    "I08": {"desc": "Otra maquinaria y equipo",                "vista": "gasto"},
+    "D01": {"desc": "Honorarios médicos y gastos hospitalarios","vista": "gasto"},
+    "D02": {"desc": "Gastos médicos por incapacidad",          "vista": "gasto"},
+    "D03": {"desc": "Gastos funerales",                        "vista": "gasto"},
+    "D04": {"desc": "Donativos",                               "vista": "gasto"},
+    "D05": {"desc": "Intereses hipotecarios",                  "vista": "gasto"},
+    "D06": {"desc": "Aportaciones voluntarias al SAR",         "vista": "gasto"},
+    "D07": {"desc": "Primas por seguros de gastos médicos",    "vista": "gasto"},
+    "D08": {"desc": "Gastos de transportación escolar",        "vista": "gasto"},
+    "D09": {"desc": "Depósitos en cuentas para el ahorro",     "vista": "gasto"},
+    "D10": {"desc": "Pagos por servicios educativos",          "vista": "gasto"},
+    "CN01":{"desc": "Nómina",                                  "vista": "ingreso"},  # INGRESO: somos el empleador
+    "CP01":{"desc": "Pagos",                                   "vista": "neutro"},
+    "S01": {"desc": "Sin efectos fiscales",                    "vista": "neutro"},
 }
 
-# Mapeo automático UsoCFDI → categoría ContaSAT
-USO_A_CATEGORIA = {
-    "G01": "compras",  "G02": "compras",  "G03": "compras",
-    "I01": "compras",  "I02": "compras",  "I03": "compras",
-    "I04": "compras",  "I05": "compras",  "I06": "compras",
-    "I07": "compras",  "I08": "compras",
-    "D01": "gastos_med","D02": "gastos_med","D07": "gastos_med",
-    "D03": "compras",  "D04": "compras",  "D05": "compras",
-    "D06": "nomina",   "D08": "compras",  "D09": "compras",
-    "D10": "compras",  "CN01":"nomina",
-    "CP01":"sin_cat",  "S01": "sin_cat",
+# Claves de impuestos SAT
+IMPUESTO_NOMBRE = {
+    "001": "ISR",
+    "002": "IVA",
+    "003": "IEPS",
 }
 
 
@@ -376,8 +373,68 @@ def _parsear(ruta: Path, tipo: str) -> dict:
         except (ValueError, TypeError):
             total = 0.0
 
-        uso_cfdi     = a(receptor, "UsoCFDI")
-        uso_cfdi_desc = USO_CFDI_CAT.get(uso_cfdi, {}).get("desc", "")
+        uso_cfdi      = a(receptor, "UsoCFDI")
+        uso_info      = USO_CFDI_CAT.get(uso_cfdi, {})
+        uso_cfdi_desc = uso_info.get("desc", "")
+        uso_vista     = uso_info.get("vista", "gasto")  # gasto/ingreso/neutro
+
+        # ── Impuestos a nivel Comprobante ────────────────────
+        # Estructura: cfdi:Impuestos/cfdi:Retenciones/cfdi:Retencion
+        #                           /cfdi:Traslados/cfdi:Traslado
+        def _imp_float(val):
+            try: return float(val or 0)
+            except: return 0.0
+
+        retenciones = []
+        traslados   = []
+
+        imp_root = (root.find(f"{ns_cfdi}Impuestos") or
+                    root.find("cfdi:Impuestos", NS) or
+                    root.find("Impuestos"))
+        if imp_root is not None:
+            for ret in (imp_root.findall(f"{ns_cfdi}Retenciones/{ns_cfdi}Retencion") or
+                        imp_root.findall("cfdi:Retenciones/cfdi:Retencion", NS) or
+                        imp_root.findall("Retenciones/Retencion")):
+                imp_key = ret.get("Impuesto", "")
+                retenciones.append({
+                    "impuesto": imp_key,
+                    "nombre":   IMPUESTO_NOMBRE.get(imp_key, imp_key),
+                    "importe":  _imp_float(ret.get("Importe")),
+                })
+            for tra in (imp_root.findall(f"{ns_cfdi}Traslados/{ns_cfdi}Traslado") or
+                        imp_root.findall("cfdi:Traslados/cfdi:Traslado", NS) or
+                        imp_root.findall("Traslados/Traslado")):
+                imp_key = tra.get("Impuesto", "")
+                traslados.append({
+                    "impuesto": imp_key,
+                    "nombre":   IMPUESTO_NOMBRE.get(imp_key, imp_key),
+                    "tasa":     tra.get("TasaOCuota", ""),
+                    "importe":  _imp_float(tra.get("Importe")),
+                    "base":     _imp_float(tra.get("Base")),
+                })
+
+        # Totales de impuestos (convenientes para el dashboard)
+        total_ret_isr = sum(r["importe"] for r in retenciones if r["impuesto"] == "001")
+        total_ret_iva = sum(r["importe"] for r in retenciones if r["impuesto"] == "002")
+        total_iva_tra = sum(t["importe"] for t in traslados   if t["impuesto"] == "002")
+        total_ret_ieps= sum(r["importe"] for r in retenciones if r["impuesto"] == "003")
+
+        # ── Detección de nómina por complemento ──────────────
+        NS_NOM12 = "http://www.sat.gob.mx/nomina12"
+        es_nomina = (
+            uso_cfdi == "CN01" or
+            root.find(f".//{{{NS_NOM12}}}Nomina") is not None or
+            root.find(".//nomina12:Nomina", {"nomina12": NS_NOM12}) is not None or
+            root.get("TipoDeComprobante", "") == "N"
+        )
+        if es_nomina:
+            uso_vista = "ingreso"  # Nómina = somos el empleador = ingreso de la empresa
+
+        # ── Tipo de comprobante final ─────────────────────────
+        tipo_comp = root.get("TipoDeComprobante", "")
+        # E = Egreso (nota de crédito), las recibidas son favor nuestro
+        if tipo_comp == "E" and tipo == "Recibida":
+            uso_vista = "ingreso"
 
         return {
             "tipo":             tipo,
@@ -391,16 +448,24 @@ def _parsear(ruta: Path, tipo: str) -> dict:
             "nombre_receptor":  a(receptor, "Nombre"),
             "uso_cfdi":         uso_cfdi,
             "uso_cfdi_desc":    uso_cfdi_desc,
+            "uso_vista":        uso_vista,
+            "es_nomina":        es_nomina,
             "descripcion":      a(concepto, "Descripcion"),
             "subtotal":         root.get("SubTotal", ""),
             "total":            total,
             "moneda":           root.get("Moneda", "MXN"),
-            "tipo_comprobante": root.get("TipoDeComprobante", ""),
+            "tipo_comprobante": tipo_comp,
             "metodo_pago":      root.get("MetodoPago", ""),
             "forma_pago":       root.get("FormaPago", ""),
             "regimen_emisor":   a(emisor,   "RegimenFiscal"),
             "clave_prod_serv":  a(concepto, "ClaveProdServ"),
-            "archivo":          ruta.name,
+            "archivo":          str(ruta),
+            "retenciones":      retenciones,
+            "traslados":        traslados,
+            "ret_isr":          round(total_ret_isr,  2),
+            "ret_iva":          round(total_ret_iva,  2),
+            "iva_trasladado":   round(total_iva_tra,  2),
+            "ret_ieps":         round(total_ret_ieps, 2),
         }
     except Exception as e:
         log.error(f"Error parseando {ruta}: {e}")
@@ -1492,26 +1557,71 @@ def get_conciliacion():
         emitidas = [_parsear(x, "Emitida") for x in xmls if "emitidas" in x.parts]
         emitidas = [f for f in emitidas if "error" not in f]
 
-        # Asignar categoría a gastos (recibidas):
-        # Prioridad 1: clasificación manual guardada
-        # Prioridad 2: auto-clasificación por UsoCFDI del SAT
-        for f in recibidas:
-            uuid     = f.get("uuid", "")
-            uso_cfdi = f.get("uso_cfdi", "")
-            if uuid in clases:
-                f["categoria"]      = clases[uuid]
-                f["cat_origen"]     = "manual"
-            elif uso_cfdi in USO_A_CATEGORIA:
-                f["categoria"]      = USO_A_CATEGORIA[uso_cfdi]
-                f["cat_origen"]     = "auto"
-            else:
-                f["categoria"]      = "sin_cat"
-                f["cat_origen"]     = "sin_clasificar"
+        # Clasificar TODAS las facturas por uso_vista del UsoCFDI
+        # Las facturas recibidas con CN01 (nómina) van a INGRESOS
+        # Las facturas emitidas siempre van a INGRESOS
+        todos = recibidas + emitidas
+        gastos_list   = []
+        ingresos_list = []
 
-        # Para emitidas solo necesitamos totales (son ingresos)
-        for f in emitidas:
-            f["categoria"]  = "ingreso"
+        for f in todos:
+            uso_cfdi = f.get("uso_cfdi", "")
+            uso_info = USO_CFDI_CAT.get(uso_cfdi, {})
+            vista    = f.get("uso_vista", uso_info.get("vista", "gasto"))
+
+            if f.get("tipo") == "Emitida":
+                vista = "ingreso"   # Emitidas siempre son ingresos
+
+            f["categoria"]  = uso_cfdi or "sin_cat"
+            f["cat_desc"]   = uso_info.get("desc", "Sin clasificar")
             f["cat_origen"] = "auto"
+            f["vista"]      = vista
+
+            if vista == "ingreso":
+                ingresos_list.append(f)
+            else:
+                gastos_list.append(f)
+
+        # Agrupar gastos por UsoCFDI para el sidebar
+        grupos_gasto = {}
+        for f in gastos_list:
+            cid = f.get("uso_cfdi") or "sin_cat"
+            if cid not in grupos_gasto:
+                grupos_gasto[cid] = {
+                    "id":    cid,
+                    "desc":  USO_CFDI_CAT.get(cid, {}).get("desc", "Sin clasificar"),
+                    "count": 0,
+                    "monto": 0.0,
+                }
+            grupos_gasto[cid]["count"] += 1
+            grupos_gasto[cid]["monto"] = round(grupos_gasto[cid]["monto"] + f.get("total", 0), 2)
+
+        # Agrupar ingresos por UsoCFDI
+        grupos_ingreso = {}
+        for f in ingresos_list:
+            cid = f.get("uso_cfdi") or "sin_cat"
+            if cid not in grupos_ingreso:
+                grupos_ingreso[cid] = {
+                    "id":    cid,
+                    "desc":  USO_CFDI_CAT.get(cid, {}).get("desc", "Sin clasificar"),
+                    "count": 0,
+                    "monto": 0.0,
+                }
+            grupos_ingreso[cid]["count"] += 1
+            grupos_ingreso[cid]["monto"] = round(grupos_ingreso[cid]["monto"] + f.get("total", 0), 2)
+
+        # Totales de impuestos (sumados de todas las facturas)
+        impuestos = {
+            "ret_isr":         round(sum(f.get("ret_isr",0)        for f in gastos_list), 2),
+            "ret_iva":         round(sum(f.get("ret_iva",0)        for f in gastos_list), 2),
+            "iva_trasladado":  round(sum(f.get("iva_trasladado",0) for f in gastos_list), 2),
+            "ret_ieps":        round(sum(f.get("ret_ieps",0)       for f in gastos_list), 2),
+        }
+
+        # Facturas canceladas: TipoDeComprobante = E (egreso/nota de crédito)
+        # La API del SAT no descarga canceladas directamente, pero podemos
+        # identificar CFDIs de egreso que referencian otros (nota de crédito)
+        canceladas = [f for f in todos if f.get("tipo_comprobante") == "E"]
 
         # Totales de gastos por categoría
         totales = {}
@@ -1523,20 +1633,23 @@ def get_conciliacion():
                 "monto": round(sum(f.get("total", 0) for f in grupo), 2),
             }
 
-        total_recibidas = round(sum(f.get("total", 0) for f in recibidas), 2)
-        total_emitidas  = round(sum(f.get("total", 0) for f in emitidas),  2)
+        total_gastos   = round(sum(f.get("total", 0) for f in gastos_list),   2)
+        total_ingresos = round(sum(f.get("total", 0) for f in ingresos_list), 2)
 
         return jsonify({
-            "ok":              True,
-            "categorias":      cats,
-            "totales":         totales,
-            "facturas":        recibidas,
-            "ingresos":        emitidas,
-            "total_gastos":    total_recibidas,
-            "total_ingresos":  total_emitidas,
-            "balance":         round(total_emitidas - total_recibidas, 2),
-            "total_count":     len(recibidas),
-            "ingresos_count":  len(emitidas),
+            "ok":               True,
+            "facturas":         gastos_list,
+            "ingresos":         ingresos_list,
+            "grupos_gasto":     list(grupos_gasto.values()),
+            "grupos_ingreso":   list(grupos_ingreso.values()),
+            "impuestos":        impuestos,
+            "canceladas":       canceladas,
+            "total_gastos":     total_gastos,
+            "total_ingresos":   total_ingresos,
+            "balance":          round(total_ingresos - total_gastos, 2),
+            "total_count":      len(gastos_list),
+            "ingresos_count":   len(ingresos_list),
+            "canceladas_count": len(canceladas),
         })
     except Exception as e:
         return jsonify({"ok": False, "msg": str(e)})
@@ -1667,6 +1780,67 @@ def diagnostico_xml():
             "tipo_comp":     p.get("tipo_comprobante"),
         })
     return jsonify({"total_xmls": len(list(DATA_DIR.rglob("*.xml"))), "muestra": resultado})
+
+
+@app.route("/api/conciliacion/xml/<uuid>", methods=["GET"])
+def descargar_xml(uuid):
+    """Descarga el archivo XML de un CFDI por UUID."""
+    for xml in DATA_DIR.rglob("*.xml"):
+        contenido = xml.read_text("utf-8", errors="replace")
+        if uuid.lower() in contenido.lower():
+            return send_file(
+                str(xml),
+                mimetype="application/xml",
+                as_attachment=True,
+                download_name=f"{uuid[:8]}.xml"
+            )
+    return jsonify({"ok": False, "msg": "XML no encontrado."}), 404
+
+@app.route("/api/impuestos", methods=["GET"])
+def get_impuestos():
+    """Desglose de impuestos de todas las facturas recibidas."""
+    try:
+        xmls      = list(DATA_DIR.rglob("*.xml"))
+        recibidas = [_parsear(x, "Recibida") for x in xmls if "recibidas" in x.parts]
+        recibidas = [f for f in recibidas if "error" not in f]
+
+        ret_isr  = round(sum(f.get("ret_isr",0)        for f in recibidas), 2)
+        ret_iva  = round(sum(f.get("ret_iva",0)        for f in recibidas), 2)
+        iva_tra  = round(sum(f.get("iva_trasladado",0) for f in recibidas), 2)
+        ret_ieps = round(sum(f.get("ret_ieps",0)       for f in recibidas), 2)
+
+        # Desglose por factura con impuestos
+        con_impuestos = [
+            {
+                "uuid":           f.get("uuid","")[:16],
+                "nombre_emisor":  f.get("nombre_emisor",""),
+                "fecha":          f.get("fecha",""),
+                "total":          f.get("total",0),
+                "iva_trasladado": f.get("iva_trasladado",0),
+                "ret_isr":        f.get("ret_isr",0),
+                "ret_iva":        f.get("ret_iva",0),
+                "ret_ieps":       f.get("ret_ieps",0),
+                "uso_cfdi":       f.get("uso_cfdi",""),
+            }
+            for f in recibidas
+            if any([f.get("ret_isr"), f.get("ret_iva"),
+                    f.get("iva_trasladado"), f.get("ret_ieps")])
+        ]
+
+        return jsonify({
+            "ok":          True,
+            "resumen":     {
+                "ret_isr":          ret_isr,
+                "ret_iva":          ret_iva,
+                "iva_trasladado":   iva_tra,
+                "ret_ieps":         ret_ieps,
+                "total_retenciones":round(ret_isr + ret_iva + ret_ieps, 2),
+            },
+            "detalle":     con_impuestos,
+            "total_facturas": len(recibidas),
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)})
 
 # ── Arranque ──────────────────────────────────────────────────
 if __name__ == "__main__":

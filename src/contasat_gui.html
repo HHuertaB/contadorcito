@@ -1272,13 +1272,15 @@ tbody td.mono { font-family: var(--font-mono); font-size: 11px; }
         <div class="metric-card"><div class="mc-lbl">Ingresos (emitidas)</div><div class="mc-val green" id="cm-ingresos">—</div><div class="mc-sub" id="cm-ingresos-n">0 facturas</div></div>
         <div class="metric-card"><div class="mc-lbl">Gastos (recibidas)</div><div class="mc-val red" id="cm-gastos">—</div><div class="mc-sub" id="cm-gastos-n">0 facturas</div></div>
         <div class="metric-card"><div class="mc-lbl">Balance</div><div class="mc-val blue" id="cm-balance">—</div><div class="mc-sub">ingresos − gastos</div></div>
-        <div class="metric-card"><div class="mc-lbl">Sin clasificar</div><div class="mc-val gold" id="cm-sincat">—</div><div class="mc-sub" id="cm-sincat-n">0 pendientes</div></div>
+        <div class="metric-card"><div class="mc-lbl">Notas de crédito</div><div class="mc-val gold" id="cm-sincat">—</div><div class="mc-sub" id="cm-sincat-n">egresos recibidos</div></div>
       </div>
 
-      <!-- Tabs ingresos / gastos -->
+      <!-- Tabs: gastos / ingresos / impuestos / canceladas -->
       <div class="tabs" style="margin-bottom:14px">
-        <button class="tab active" id="tab-gastos"   onclick="setVistaConc('gastos',  this)">Gastos (recibidas)</button>
-        <button class="tab"        id="tab-ingresos" onclick="setVistaConc('ingresos',this)">Ingresos (emitidas)</button>
+        <button class="tab active" onclick="setVistaConc('gastos',     this)">Gastos</button>
+        <button class="tab"        onclick="setVistaConc('ingresos',   this)">Ingresos y Nómina</button>
+        <button class="tab"        onclick="setVistaConc('impuestos',  this)">Impuestos</button>
+        <button class="tab"        onclick="setVistaConc('canceladas', this)">Notas de crédito</button>
       </div>
 
       <div id="concil-layout" style="display:grid;grid-template-columns:230px 1fr;gap:14px;align-items:start">
@@ -1286,7 +1288,7 @@ tbody td.mono { font-family: var(--font-mono); font-size: 11px; }
         <!-- Sidebar de categorías (solo visible en vista gastos) -->
         <div id="concil-sidebar">
           <div id="concil-cats" style="display:flex;flex-direction:column;gap:6px"></div>
-          <button class="btn btn-s btn-sm" style="width:100%;margin-top:8px;border-style:dashed" onclick="nuevaCategoria()">+ Nueva categoría</button>
+          <div style="font-size:11px;color:var(--text-3);margin-top:8px;padding:8px;text-align:center;border:1px dashed var(--border);border-radius:var(--rs)">Categorías automáticas por UsoCFDI</div>
         </div>
 
         <!-- Panel principal de facturas -->
@@ -1300,8 +1302,8 @@ tbody td.mono { font-family: var(--font-mono); font-size: 11px; }
               style="width:220px;font-size:12px" oninput="renderFacturasConcil()"/>
           </div>
           <!-- Cabecera tabla (se actualiza según vista) -->
-          <div id="concil-col-hdr" style="display:grid;grid-template-columns:1fr 110px 90px 100px 140px 150px;gap:8px;padding:7px 16px;font-size:11px;color:var(--text-3);background:var(--bg2);border-bottom:1px solid var(--border)">
-            <span>Emisor</span><span>RFC</span><span>Fecha</span><span style="text-align:right">Total</span><span>Uso CFDI</span><span style="text-align:center">Categoría</span>
+          <div id="concil-col-hdr" style="display:grid;grid-template-columns:1fr 110px 90px 100px 150px 100px;gap:8px;padding:7px 16px;font-size:11px;color:var(--text-3);background:var(--bg2);border-bottom:1px solid var(--border)">
+            <span>Emisor</span><span>RFC</span><span>Fecha</span><span>Total / Impuestos</span><span>Uso CFDI</span><span style="text-align:center">XML</span>
           </div>
           <!-- Filas -->
           <div id="concil-tabla" style="max-height:520px;overflow-y:auto"></div>
@@ -1992,14 +1994,9 @@ async function probarCorreo() {
 
 
 // ── Conciliacion ──────────────────────────────────────────────
-let _concilData  = null;
-let _catActiva   = 'todas';
-let _vistaConc   = 'gastos';   // 'gastos' | 'ingresos'
-const CAT_COLORES = {
-  purple:'#7F77DD', teal:'#1D9E75', amber:'#BA7517',
-  blue:'#378ADD',   green:'#639922', coral:'#D85A30',
-  gray:'#888780',   red:'#E24B4A',
-};
+let _concilData = null;
+let _catActiva  = 'todas';
+let _vistaConc  = 'gastos';
 
 async function cargarConciliacion() {
   document.getElementById('concil-tabla').innerHTML =
@@ -2012,6 +2009,7 @@ async function cargarConciliacion() {
     renderMetricasConcil();
     renderCategorias();
     renderFacturasConcil();
+    renderImpuestos();
   } catch(e) {
     document.getElementById('concil-tabla').innerHTML =
       '<div style="padding:32px;text-align:center;color:var(--color-text-danger)">Error: ' + e.message + '</div>';
@@ -2023,25 +2021,19 @@ function setVistaConc(vista, btn) {
   _catActiva = 'todas';
   btn.closest('.tabs').querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   btn.classList.add('active');
-
-  // Mostrar/ocultar sidebar de categorías
   const sidebar = document.getElementById('concil-sidebar');
   const layout  = document.getElementById('concil-layout');
   if (vista === 'ingresos') {
     sidebar.style.display = 'none';
     layout.style.gridTemplateColumns = '1fr';
-    // Cabecera sin columna de categoría
-    document.getElementById('concil-col-hdr').style.gridTemplateColumns = '1fr 110px 90px 100px';
-    document.getElementById('concil-col-hdr').innerHTML =
-      '<span>Receptor</span><span>RFC Receptor</span><span>Fecha</span><span style="text-align:right">Total</span>';
+  } else if (vista === 'impuestos' || vista === 'canceladas') {
+    sidebar.style.display = 'none';
+    layout.style.gridTemplateColumns = '1fr';
   } else {
     sidebar.style.display = 'flex';
     sidebar.style.flexDirection = 'column';
     sidebar.style.gap = '6px';
     layout.style.gridTemplateColumns = '230px 1fr';
-    document.getElementById('concil-col-hdr').style.gridTemplateColumns = '1fr 110px 90px 100px 140px 150px';
-    document.getElementById('concil-col-hdr').innerHTML =
-      '<span>Emisor</span><span>RFC</span><span>Fecha</span><span style="text-align:right">Total</span><span>Uso CFDI</span><span style="text-align:center">Categoría</span>';
   }
   renderCategorias();
   renderFacturasConcil();
@@ -2049,55 +2041,51 @@ function setVistaConc(vista, btn) {
 
 function renderMetricasConcil() {
   if (!_concilData) return;
-  const { total_gastos, total_ingresos, balance, total_count, ingresos_count, totales } = _concilData;
-  const sinCat = totales['sin_cat'] || { count:0, monto:0 };
+  const { total_gastos, total_ingresos, balance, total_count, ingresos_count, canceladas_count, impuestos } = _concilData;
   document.getElementById('cm-ingresos').textContent   = fmt(total_ingresos);
-  document.getElementById('cm-ingresos-n').textContent = (ingresos_count||0) + ' facturas emitidas';
+  document.getElementById('cm-ingresos-n').textContent = (ingresos_count||0) + ' facturas';
   document.getElementById('cm-gastos').textContent     = fmt(total_gastos);
-  document.getElementById('cm-gastos-n').textContent   = (total_count||0) + ' facturas recibidas';
+  document.getElementById('cm-gastos-n').textContent   = (total_count||0) + ' facturas';
   const bal = document.getElementById('cm-balance');
   bal.textContent = fmt(balance);
   bal.className   = 'mc-val ' + (balance >= 0 ? 'green' : 'red');
-  document.getElementById('cm-sincat').textContent   = sinCat.count;
-  document.getElementById('cm-sincat-n').textContent = sinCat.count === 0 ? 'todo clasificado' : 'pendientes de clasificar';
+  document.getElementById('cm-sincat').textContent   = canceladas_count || 0;
+  document.getElementById('cm-sincat-n').textContent = 'notas de crédito / egresos';
   document.getElementById('concil-sub').textContent  =
     (total_count||0) + ' gastos · ' + (ingresos_count||0) + ' ingresos · balance ' + fmt(balance);
 }
 
 function renderCategorias() {
-  if (!_concilData || _vistaConc === 'ingresos') return;
-  const { categorias, totales, total_gastos } = _concilData;
-  const total = total_gastos || 1;
-  const cont  = document.getElementById('concil-cats');
+  if (!_concilData || _vistaConc !== 'gastos') return;
+  const grupos = _concilData.grupos_gasto || [];
+  const total  = _concilData.total_gastos || 1;
+  const cont   = document.getElementById('concil-cats');
+  const CAT_COLORS = ['#7F77DD','#1D9E75','#BA7517','#378ADD','#639922','#D85A30','#D4537E','#888780'];
 
   let html = `<div class="cat-item${_catActiva==='todas'?' active':''}" onclick="seleccionarCat('todas')"
     ondragover="catDragOver(event,this)" ondragleave="catDragLeave(this)" ondrop="catDrop(event,'sin_cat',this)">
     <div class="ci-name">Todos los gastos</div>
-    <div class="ci-meta">
-      <span class="ci-count">${_concilData.total_count} facturas</span>
-      <span class="ci-monto">${fmt(_concilData.total_gastos)}</span>
-    </div>
+    <div class="ci-meta"><span class="ci-count">${_concilData.total_count} facturas</span>
+    <span class="ci-monto">${fmt(_concilData.total_gastos)}</span></div>
     <div class="ci-bar"><div class="ci-bar-fill" style="width:100%"></div></div>
   </div>`;
 
-  for (const cat of categorias) {
-    const t     = totales[cat.id] || { count:0, monto:0 };
-    const pct   = Math.round((t.monto / total) * 100);
-    const color = CAT_COLORES[cat.color] || '#888';
-    const isSin = cat.id === 'sin_cat';
-    html += `<div class="cat-item${_catActiva===cat.id?' active':''}" onclick="seleccionarCat('${cat.id}')"
-      ondragover="catDragOver(event,this)" ondragleave="catDragLeave(this)" ondrop="catDrop(event,'${cat.id}',this)">
+  grupos.sort((a,b) => b.monto - a.monto).forEach((g, idx) => {
+    const pct   = Math.round((g.monto / total) * 100);
+    const color = CAT_COLORS[idx % CAT_COLORS.length];
+    html += `<div class="cat-item${_catActiva===g.id?' active':''}" onclick="seleccionarCat('${g.id}')">
       <div style="display:flex;align-items:center;gap:6px">
         <span style="width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0"></span>
-        <span class="ci-name">${cat.nombre}</span>
+        <span class="ci-name" style="font-size:11px;font-weight:700">${g.id}</span>
+        <span class="ci-count" style="font-size:10px">${g.desc}</span>
       </div>
       <div class="ci-meta">
-        <span class="ci-count">${t.count} facturas</span>
-        <span class="ci-monto"${isSin&&t.count>0?' style="color:var(--gold)"':''}>${fmt(t.monto)}</span>
+        <span class="ci-count">${g.count} facturas</span>
+        <span class="ci-monto">${fmt(g.monto)}</span>
       </div>
       <div class="ci-bar"><div class="ci-bar-fill" style="width:${pct}%;background:${color}"></div></div>
     </div>`;
-  }
+  });
   cont.innerHTML = html;
 }
 
@@ -2109,37 +2097,65 @@ function seleccionarCat(catId) {
 
 function renderFacturasConcil() {
   if (!_concilData) return;
-  const q    = (document.getElementById('concil-busq')?.value || '').toLowerCase();
-  const cats = _concilData.categorias;
   const tbody = document.getElementById('concil-tabla');
+  const q     = (document.getElementById('concil-busq')?.value || '').toLowerCase();
 
-  if (_vistaConc === 'ingresos') {
-    // Vista ingresos: facturas emitidas, sin categorías
-    let ingresos = _concilData.ingresos || [];
-    if (q) ingresos = ingresos.filter(f =>
-      (f.nombre_receptor||'').toLowerCase().includes(q) ||
-      (f.rfc_receptor||'').toLowerCase().includes(q) ||
-      (f.descripcion||'').toLowerCase().includes(q)
+  // ── Vista impuestos ──
+  if (_vistaConc === 'impuestos') {
+    renderImpuestosTabla();
+    return;
+  }
+
+  // ── Vista canceladas ──
+  if (_vistaConc === 'canceladas') {
+    const cancels = (_concilData.canceladas || []).filter(f =>
+      !q || JSON.stringify(f).toLowerCase().includes(q)
     );
-    document.getElementById('concil-panel-titulo').textContent = 'Ingresos — Facturas emitidas';
+    document.getElementById('concil-panel-titulo').textContent = 'Notas de crédito / Egresos';
+    document.getElementById('concil-panel-count').textContent  = cancels.length + ' documentos';
+    tbody.innerHTML = cancels.length
+      ? cancels.map(f => `<div class="concil-row" style="grid-template-columns:1fr 110px 90px 100px 140px 100px">
+          <div>
+            <div class="cr-emisor">${f.nombre_emisor||'(sin nombre)'}</div>
+            <div class="cr-rfc">${f.rfc_emisor||''}</div>
+          </div>
+          <span class="cr-rfc">${f.rfc_emisor||''}</span>
+          <span class="cr-fecha">${f.fecha||''}</span>
+          <span class="cr-monto" style="color:var(--gold)">${fmt(f.total)}</span>
+          <span style="font-size:10px;color:var(--text-2)">${f.uso_cfdi||''} — ${f.uso_cfdi_desc||''}</span>
+          <button class="btn btn-s btn-sm" onclick="descargarXML('${f.uuid||''}')">⬇ XML</button>
+        </div>`).join('')
+      : '<div style="padding:32px;text-align:center;color:var(--text-3)">Sin notas de crédito.</div>';
+    return;
+  }
+
+  // ── Vista ingresos ──
+  if (_vistaConc === 'ingresos') {
+    let ingresos = (_concilData.ingresos || []).filter(f =>
+      !q || (f.nombre_emisor||'').toLowerCase().includes(q) ||
+             (f.rfc_emisor||'').toLowerCase().includes(q) ||
+             (f.uso_cfdi_desc||'').toLowerCase().includes(q)
+    );
+    document.getElementById('concil-panel-titulo').textContent = 'Ingresos — Nómina y emitidas';
     document.getElementById('concil-panel-count').textContent  =
       ingresos.length + ' facturas · ' + fmt(ingresos.reduce((s,f)=>s+f.total,0));
-
     tbody.innerHTML = ingresos.length
-      ? ingresos.map(f => `<div class="concil-row" style="grid-template-columns:1fr 110px 90px 100px">
+      ? ingresos.map(f => `<div class="concil-row" style="grid-template-columns:1fr 110px 90px 100px 140px 100px">
           <div>
-            <div class="cr-emisor">${f.nombre_receptor||'(sin nombre)'}</div>
-            <div class="cr-rfc">${f.rfc_receptor||''}</div>
+            <div class="cr-emisor">${f.nombre_emisor||f.nombre_receptor||'(sin nombre)'}</div>
+            <div class="cr-rfc">${f.rfc_emisor||''} ${f.es_nomina?'· Nómina':''}</div>
           </div>
           <span class="cr-rfc">${f.rfc_receptor||''}</span>
           <span class="cr-fecha">${f.fecha||''}</span>
           <span class="cr-monto" style="color:var(--em)">${fmt(f.total)}</span>
+          <span style="font-size:10px"><b>${f.uso_cfdi||'—'}</b><br><span style="color:var(--text-3)">${f.uso_cfdi_desc||''}</span></span>
+          <button class="btn btn-s btn-sm" onclick="descargarXML('${f.uuid||''}')">⬇ XML</button>
         </div>`).join('')
-      : '<div style="padding:32px;text-align:center;color:var(--text-3)">Sin facturas emitidas en el período.</div>';
+      : '<div style="padding:32px;text-align:center;color:var(--text-3)">Sin ingresos registrados.</div>';
     return;
   }
 
-  // Vista gastos: facturas recibidas con categorías
+  // ── Vista gastos ──
   let facturas = _concilData.facturas || [];
   if (_catActiva !== 'todas') facturas = facturas.filter(f => f.categoria === _catActiva);
   if (q) facturas = facturas.filter(f =>
@@ -2150,23 +2166,20 @@ function renderFacturasConcil() {
     (f.uso_cfdi_desc||'').toLowerCase().includes(q)
   );
 
-  const catActObj = cats.find(c => c.id === _catActiva);
   document.getElementById('concil-panel-titulo').textContent =
-    _catActiva === 'todas' ? 'Todos los gastos' : (catActObj?.nombre || _catActiva);
+    _catActiva === 'todas' ? 'Todos los gastos'
+    : `${_catActiva} — ${((_concilData.grupos_gasto||[]).find(g=>g.id===_catActiva)||{}).desc||''}`;
   document.getElementById('concil-panel-count').textContent =
     facturas.length + ' facturas · ' + fmt(facturas.reduce((s,f)=>s+f.total,0));
 
   tbody.innerHTML = facturas.length
     ? facturas.map(f => {
-        const color = CAT_COLORES[cats.find(c=>c.id===f.categoria)?.color] || '#888';
-        const esSin = f.categoria === 'sin_cat';
-        const esAuto = f.cat_origen === 'auto';
+        const hayImp = f.iva_trasladado||f.ret_isr||f.ret_iva;
         return `<div class="concil-row" draggable="true"
-            ondragstart="dragStart(event,'${f.uuid}')"
-            ondragend="dragEnd(event)"
-            style="grid-template-columns:1fr 110px 90px 100px 140px 150px">
+            ondragstart="dragStart(event,'${f.uuid||''}')" ondragend="dragEnd(event)"
+            style="grid-template-columns:1fr 110px 90px 100px 150px 100px">
           <div style="display:flex;align-items:center;gap:8px;min-width:0">
-            <svg style="width:10px;height:14px;opacity:.25;cursor:grab;flex-shrink:0" viewBox="0 0 8 14" fill="currentColor">
+            <svg style="width:10px;height:14px;opacity:.2;cursor:grab;flex-shrink:0" viewBox="0 0 8 14" fill="currentColor">
               <circle cx="2" cy="2" r="1.2"/><circle cx="6" cy="2" r="1.2"/>
               <circle cx="2" cy="7" r="1.2"/><circle cx="6" cy="7" r="1.2"/>
               <circle cx="2" cy="12" r="1.2"/><circle cx="6" cy="12" r="1.2"/>
@@ -2178,70 +2191,90 @@ function renderFacturasConcil() {
           </div>
           <span class="cr-rfc">${f.rfc_emisor||''}</span>
           <span class="cr-fecha">${f.fecha||''}</span>
-          <span class="cr-monto">${fmt(f.total)}</span>
+          <div>
+            <div class="cr-monto">${fmt(f.total)}</div>
+            ${hayImp?`<div style="font-size:10px;color:var(--text-3)">IVA ${fmt(f.iva_trasladado)} · ISR ret ${fmt(f.ret_isr)}</div>`:''}
+          </div>
           <div style="font-size:10px">
-            <span style="font-weight:600;color:var(--text-2)">${f.uso_cfdi||'—'}</span>
-            <div style="color:var(--text-3);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:135px">${f.uso_cfdi_desc||''}</div>
+            <span style="font-weight:700;color:var(--text-2)">${f.uso_cfdi||'—'}</span>
+            <div style="color:var(--text-3);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:145px">${f.uso_cfdi_desc||''}</div>
           </div>
-          <div style="display:flex;align-items:center;gap:5px">
-            <span style="width:7px;height:7px;border-radius:50%;background:${esSin?'var(--gold)':color};flex-shrink:0"></span>
-            <select class="cr-sel" onchange="cambiarCategoria('${f.uuid}',this.value)"
-              title="${esAuto?'Clasificado automáticamente por UsoCFDI del SAT':'Clasificado manualmente'}"
-              style="${esAuto?'border-style:dashed;':''}">
-              ${cats.map(c=>`<option value="${c.id}"${c.id===f.categoria?' selected':''}>${c.nombre}</option>`).join('')}
-            </select>
-          </div>
+          <button class="btn btn-s btn-sm" onclick="descargarXML('${f.uuid||''}')">⬇ XML</button>
         </div>`;
       }).join('')
     : '<div style="padding:32px;text-align:center;color:var(--text-3)">Sin gastos en esta categoría.</div>';
 }
 
-async function cambiarCategoria(uuid, nueva_cat) {
-  const r = await apiFetch('POST', '/api/conciliacion/clasificar', { uuid, categoria: nueva_cat });
-  if (!r.ok) { toast(r.msg, 'error'); return; }
-  if (_concilData) {
-    const f = _concilData.facturas.find(f => f.uuid === uuid);
-    if (f) {
-      const tot   = _concilData.totales;
-      const antes = f.categoria;
-      if (tot[antes]) { tot[antes].count--; tot[antes].monto = Math.round((tot[antes].monto - f.total)*100)/100; }
-      if (!tot[nueva_cat]) tot[nueva_cat] = { count:0, monto:0 };
-      tot[nueva_cat].count++;
-      tot[nueva_cat].monto = Math.round((tot[nueva_cat].monto + f.total)*100)/100;
-      f.categoria  = nueva_cat;
-      f.cat_origen = 'manual';
-    }
-    renderMetricasConcil();
-    renderCategorias();
-  }
+function descargarXML(uuid) {
+  if (!uuid) { toast('UUID no disponible', 'error'); return; }
+  window.open(`/api/conciliacion/xml/${uuid}`, '_blank');
 }
 
-async function nuevaCategoria() {
-  const nombre = prompt('Nombre de la nueva categoría:');
-  if (!nombre || !nombre.trim()) return;
+function renderImpuestos() {
   if (!_concilData) return;
-  const id      = nombre.trim().toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'');
-  const colores = ['purple','teal','amber','blue','green','coral','pink'];
-  const usados  = _concilData.categorias.map(c=>c.color);
-  const color   = colores.find(c=>!usados.includes(c)) || 'gray';
-  const cats    = _concilData.categorias.filter(c=>c.id!=='sin_cat');
-  cats.push({ id, nombre:nombre.trim(), color });
-  cats.push({ id:'sin_cat', nombre:'Sin clasificar', color:'gray' });
-  const r = await apiFetch('POST', '/api/conciliacion/categorias', cats);
-  if (r.ok) {
-    _concilData.categorias = r.categorias;
-    _concilData.totales[id] = { count:0, monto:0 };
-    renderCategorias();
-    renderFacturasConcil();
-    toast('Categoría "' + nombre.trim() + '" creada.', 'success');
-  } else {
-    toast(r.msg, 'error');
-  }
+  const imp = _concilData.impuestos || {};
+  document.getElementById('imp-ret-isr')?.textContent && (document.getElementById('imp-ret-isr').textContent = fmt(imp.ret_isr||0));
+  document.getElementById('imp-ret-iva')?.textContent && (document.getElementById('imp-ret-iva').textContent = fmt(imp.ret_iva||0));
+  document.getElementById('imp-iva-tra')?.textContent && (document.getElementById('imp-iva-tra').textContent = fmt(imp.iva_trasladado||0));
+  document.getElementById('imp-ret-ieps')?.textContent && (document.getElementById('imp-ret-ieps').textContent = fmt(imp.ret_ieps||0));
+  const total = (imp.ret_isr||0)+(imp.ret_iva||0)+(imp.ret_ieps||0);
+  document.getElementById('imp-total-ret')?.textContent && (document.getElementById('imp-total-ret').textContent = fmt(total));
+}
+
+function renderImpuestosTabla() {
+  document.getElementById('concil-panel-titulo').textContent = 'Desglose de impuestos';
+  const imp = _concilData?.impuestos || {};
+  const tbody = document.getElementById('concil-tabla');
+  tbody.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;padding:16px">
+      <div class="metric-card">
+        <div class="mc-lbl">IVA trasladado (pagado)</div>
+        <div class="mc-val" style="color:var(--text)">${fmt(imp.iva_trasladado||0)}</div>
+        <div class="mc-sub">IVA que pagaste a tus proveedores</div>
+      </div>
+      <div class="metric-card">
+        <div class="mc-lbl">ISR retenido</div>
+        <div class="mc-val" style="color:var(--gold)">${fmt(imp.ret_isr||0)}</div>
+        <div class="mc-sub">ISR que te retuvieron tus clientes</div>
+      </div>
+      <div class="metric-card">
+        <div class="mc-lbl">IVA retenido</div>
+        <div class="mc-val" style="color:var(--gold)">${fmt(imp.ret_iva||0)}</div>
+        <div class="mc-sub">IVA que te retuvieron tus clientes</div>
+      </div>
+      <div class="metric-card">
+        <div class="mc-lbl">IEPS retenido</div>
+        <div class="mc-val" style="color:var(--text)">${fmt(imp.ret_ieps||0)}</div>
+        <div class="mc-sub">IEPS retenido en tus facturas</div>
+      </div>
+      <div class="metric-card">
+        <div class="mc-lbl">Total retenciones</div>
+        <div class="mc-val red">${fmt((imp.ret_isr||0)+(imp.ret_iva||0)+(imp.ret_ieps||0))}</div>
+        <div class="mc-sub">Suma de todas las retenciones</div>
+      </div>
+      <div class="metric-card">
+        <div class="mc-lbl">Facturas con impuestos</div>
+        <div class="mc-val blue" id="imp-n-facturas">—</div>
+        <div class="mc-sub">Con al menos un impuesto registrado</div>
+      </div>
+    </div>`;
+  // Cargar detalle
+  apiFetch('GET', '/api/impuestos').then(r => {
+    if (r.ok) {
+      document.getElementById('imp-n-facturas').textContent = r.detalle?.length || 0;
+      document.getElementById('concil-panel-count').textContent =
+        r.total_facturas + ' facturas analizadas';
+    }
+  });
 }
 
 async function exportarConciliacion() {
   const r = await apiFetch('POST', '/api/conciliacion/exportar-excel');
   toast(r.msg, r.ok ? 'success' : 'error');
+}
+
+async function nuevaCategoria() {
+  toast('Las categorías son automáticas basadas en el UsoCFDI del SAT', 'info');
 }
 
 // ── Drag & drop conciliacion ──────────────────────────────────

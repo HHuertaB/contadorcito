@@ -5,47 +5,84 @@ Las versiones siguen [Semantic Versioning](https://semver.org/lang/es/).
 
 ---
 
-## [1.0.0] — 2026-03-19
-
-### Nuevo
-- Instalador automático `.bat` que descarga todo desde GitHub en un solo paso
-- Interfaz gráfica de escritorio con PyWebView (ventana nativa, sin navegador)
-- Módulo Dashboard con métricas de período: emitido, recibido, balance y CFDIs en disco
-- Módulo Descarga SAT con carga de e.firma via drag & drop
-- Conexión al Web Service del SAT para descarga de CFDIs emitidos y recibidos
-- Lógica de rango inteligente: primera ejecución descarga desde 01-Ene; ejecuciones siguientes desde última fecha − 1 día
-- Overwrite por UUID: nunca se generan duplicados
-- Módulo Facturas con búsqueda y filtrado por tipo
-- Módulo Historial con timeline de ejecuciones y estadísticas
-- Módulo Configuración con perfil fiscal, correos y automatización mensual
-- Centro de Reportes con exportación a Excel
-- Notificación por correo al terminar cada descarga
-- Tarea automática mensual en el Programador de tareas de Windows
-- Log en tiempo real dentro de la interfaz durante la descarga
-- Soporte para CFDI 3.3 y 4.0
-- Archivo `historial.json` como fuente de verdad de UUIDs y fechas
-- Registro de log en disco (`descarga_sat.log`)
+## [3.7.0] — 2026-03-19
 
 ### Arquitectura
-- Backend Python expuesto como API a la GUI via `pywebview.js_api`
-- Descarga del SAT en hilo separado para no bloquear la interfaz
-- Comunicación bidireccional: Python llama callbacks JavaScript para actualizar progreso
+- Migrado de PyWebView a Flask + navegador del sistema (Edge/Chrome)
+  - Elimina dependencia de pythonnet, NuGet y compilacion de .NET
+  - La GUI se sirve en localhost:5120 y se abre automaticamente
+  - Comunicacion Python <-> GUI via fetch(/api/...) en lugar de pywebview.api
+- Migrado de cfdiclient a satcfdi para la comunicacion con el SAT
+  - cfdiclient tenia API inestable que rompia entre versiones
+  - satcfdi usa metodos claros: recover_comprobante_received_request,
+    recover_comprobante_emitted_request, recover_comprobante_status,
+    recover_comprobante_download
+- Entorno virtual (venv) obligatorio — aisla completamente las dependencias
+  del sistema operativo y elimina conflictos de versiones de Python
+
+### Nuevo
+- Division automatica de rangos en bloques de 3 meses (limite del SAT)
+  - Una solicitud de año completo se divide en 4 bloques secuenciales
+  - El log muestra el avance: [1/8], [2/8], etc.
+- Plan de descarga persistente (plan_descarga.json)
+  - Si se cierra el programa durante una descarga, al reabrir aparece
+    un banner para continuar desde donde se quedo
+  - Cada bloque tiene estado: pendiente, en_proceso, completado, error
+- Solicitudes pendientes individuales (solicitudes_pendientes.json)
+  - Guarda el ID de cada solicitud al crearla
+  - Al reabrir la app muestra banner con opcion de reanudar
+- Envio de correo por SMTP al terminar cada descarga
+  - Usa contraseña de aplicacion de Gmail (no la contraseña normal)
+  - Correo HTML con tabla resumen y Excel adjunto
+  - Endpoint /api/correo/probar para validar configuracion
+  - La contraseña se guarda en config.json y no se vuelve a pedir
+- GUI completamente reconstruida sin datos de demostracion
+  - Un solo archivo HTML valido (1 html, 1 body, 1 script)
+  - Todos los datos vienen de /api/* en tiempo real
+  - Estado inicial limpio hasta que se configure el RFC y se descarguen CFDIs
+- Parametro estado_comprobante=VIGENTE en solicitudes al SAT
+  - Resuelve el error 301 "No se permite descarga de xml cancelados"
+- Campo smtp_password en configuracion con persistencia automatica
+
+### Corregido
+- Error 301 del SAT al solicitar CFDIs recibidos
+- Interfaz duplicada por multiples inyecciones de bridge en el HTML
+- Datos hardcodeados visibles sin haber configurado el sistema
+- Metodo recover_comprobante_iwait inexistente en satcfdi instalado
+- Instalador .bat con caracteres UTF-8 que corrompian etiquetas goto
+- Acceso directo que cerraba la terminal sin mostrar el error
 
 ---
 
-## Próximas versiones
+## [1.0.0] — 2026-03-19 (version inicial)
 
-### [1.1.0] — Planificado
+### Nuevo
+- Instalador automatico .bat que descarga todo desde GitHub en un solo paso
+- Interfaz grafica con Dashboard, Descarga SAT, Facturas, Conciliacion,
+  Reportes, Historial y Configuracion
+- Descarga de CFDIs emitidos y recibidos via Web Service del SAT
+- Rango inteligente: primera ejecucion desde 01-Ene; siguientes desde
+  ultima fecha menos 1 dia
+- Overwrite por UUID: nunca se generan duplicados
+- Carga de e.firma con drag & drop (.cer y .key)
+- Rutas de e.firma recordadas entre sesiones (solo pide contraseña)
+- Reporte Excel con hojas Resumen, Emitidas y Recibidas
+- Tarea automatica mensual en Programador de tareas de Windows
+- Historial de descargas con timeline de ejecuciones
+- Soporte para CFDI 3.3 y 4.0
+- Documentacion: README.md, INSTALL.md, CHANGELOG.md, CONTRIBUTING.md
+  y Guia de Usuario en Word
 
-- Módulo de Conciliación completo con clasificación por categoría fiscal
-- Reporte DIOT en formato `.txt` listo para importar al SAT
-- Reporte de balance fiscal en PDF
-- Envío automático del paquete mensual al correo del contador
-- Validación de vigencia de e.firma con aviso anticipado 30 días antes
+---
 
-### [1.2.0] — Planificado
+## Proximas versiones
 
-- Soporte para múltiples RFCs (personas físicas con varias actividades)
-- Gráficas de tendencia mensual en el Dashboard
-- Exportación a Google Sheets
-- Versión para macOS y Linux
+### [3.8.0] — Planificado
+- Modulo de conciliacion con clasificacion por categoria fiscal
+- Reporte DIOT en formato .txt importable al SAT
+- Envio del paquete mensual al contador por correo
+
+### [4.0.0] — Planificado
+- Soporte para multiples RFCs
+- Graficas de tendencia mensual en el Dashboard
+- Version para macOS y Linux

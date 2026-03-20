@@ -941,6 +941,34 @@ tbody td.mono { font-family: var(--font-mono); font-size: 11px; }
   grid-template-columns: 2fr 1fr;
   gap: 20px;
 }
+
+.metric-card{background:var(--bg2);border-radius:var(--rs);padding:12px 14px}
+.mc-lbl{font-size:11px;color:var(--text-3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px;font-weight:600}
+.mc-val{font-size:20px;font-weight:700;color:var(--text)}
+.mc-val.green{color:var(--em)}
+.mc-val.gold{color:var(--gold)}
+.mc-val.blue{color:var(--blue)}
+.mc-sub{font-size:11px;color:var(--text-3);margin-top:2px}
+.cat-item{background:var(--bg2);border:1px solid var(--border);border-radius:var(--rs);padding:10px 12px;cursor:pointer;transition:border-color .15s}
+.cat-item:hover{border-color:var(--border2)}
+.cat-item.active{border-color:var(--em);background:var(--em-d)}
+.cat-item .ci-name{font-size:13px;font-weight:600;color:var(--text)}
+.cat-item.active .ci-name{color:var(--em)}
+.cat-item .ci-meta{display:flex;justify-content:space-between;margin-top:4px}
+.cat-item .ci-count{font-size:11px;color:var(--text-3)}
+.cat-item .ci-monto{font-size:12px;font-weight:600;color:var(--text-2)}
+.cat-item.active .ci-monto{color:var(--em)}
+.ci-bar{height:3px;background:var(--border);border-radius:2px;margin-top:6px;overflow:hidden}
+.ci-bar-fill{height:100%;border-radius:2px;background:var(--em)}
+.concil-row{display:grid;grid-template-columns:1fr 130px 90px 100px 160px;gap:8px;padding:9px 16px;border-bottom:1px solid var(--border);font-size:12px;align-items:center}
+.concil-row:last-child{border-bottom:none}
+.concil-row:hover{background:var(--bg2)}
+.cr-emisor{font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cr-rfc{font-size:10px;color:var(--text-3);margin-top:1px;font-family:var(--fm)}
+.cr-fecha{color:var(--text-2);font-family:var(--fm);font-size:11px}
+.cr-monto{text-align:right;font-weight:600;color:var(--em)}
+.cr-sel{width:100%;padding:4px 6px;border:1px solid var(--border);border-radius:var(--rs);font-size:11px;background:var(--bg2);color:var(--text);cursor:pointer}
+
 </style>
 </head>
 <body>
@@ -1231,8 +1259,55 @@ tbody td.mono { font-family: var(--font-mono); font-size: 11px; }
 
     <!-- CONCILIACION -->
     <div class="page" id="page-conciliacion">
-      <div class="sec-hdr"><div><div class="sec-title"><span>Conciliación</span></div><div class="sec-sub">Clasifica tus facturas por categoría</div></div></div>
-      <div class="card"><div class="empty"><div class="ei">⚖️</div><div class="et">Módulo de conciliación</div><div>Disponible cuando tengas CFDIs descargados</div></div></div>
+      <div class="sec-hdr">
+        <div><div class="sec-title"><span>Conciliación</span></div><div class="sec-sub" id="concil-sub">Clasifica tus facturas recibidas por categoría</div></div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-s btn-sm" onclick="cargarConciliacion()">↺ Actualizar</button>
+          <button class="btn btn-p btn-sm" onclick="exportarConciliacion()">📊 Exportar por categoría</button>
+        </div>
+      </div>
+
+      <!-- Métricas rápidas: ingresos vs gastos -->
+      <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:18px">
+        <div class="metric-card"><div class="mc-lbl">Ingresos (emitidas)</div><div class="mc-val green" id="cm-ingresos">—</div><div class="mc-sub" id="cm-ingresos-n">0 facturas</div></div>
+        <div class="metric-card"><div class="mc-lbl">Gastos (recibidas)</div><div class="mc-val red" id="cm-gastos">—</div><div class="mc-sub" id="cm-gastos-n">0 facturas</div></div>
+        <div class="metric-card"><div class="mc-lbl">Balance</div><div class="mc-val blue" id="cm-balance">—</div><div class="mc-sub">ingresos − gastos</div></div>
+        <div class="metric-card"><div class="mc-lbl">Sin clasificar</div><div class="mc-val gold" id="cm-sincat">—</div><div class="mc-sub" id="cm-sincat-n">0 pendientes</div></div>
+      </div>
+
+      <!-- Tabs ingresos / gastos -->
+      <div class="tabs" style="margin-bottom:14px">
+        <button class="tab active" id="tab-gastos"   onclick="setVistaConc('gastos',  this)">Gastos (recibidas)</button>
+        <button class="tab"        id="tab-ingresos" onclick="setVistaConc('ingresos',this)">Ingresos (emitidas)</button>
+      </div>
+
+      <div id="concil-layout" style="display:grid;grid-template-columns:230px 1fr;gap:14px;align-items:start">
+
+        <!-- Sidebar de categorías (solo visible en vista gastos) -->
+        <div id="concil-sidebar">
+          <div id="concil-cats" style="display:flex;flex-direction:column;gap:6px"></div>
+          <button class="btn btn-s btn-sm" style="width:100%;margin-top:8px;border-style:dashed" onclick="nuevaCategoria()">+ Nueva categoría</button>
+        </div>
+
+        <!-- Panel principal de facturas -->
+        <div class="card" style="padding:0;overflow:hidden">
+          <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px">
+            <div style="flex:1">
+              <span style="font-size:14px;font-weight:600;color:var(--text)" id="concil-panel-titulo">Todas las facturas</span>
+              <span style="font-size:12px;color:var(--text-3);margin-left:8px" id="concil-panel-count"></span>
+            </div>
+            <input type="text" id="concil-busq" placeholder="Buscar emisor, RFC, descripción..."
+              style="width:220px;font-size:12px" oninput="renderFacturasConcil()"/>
+          </div>
+          <!-- Cabecera tabla (se actualiza según vista) -->
+          <div id="concil-col-hdr" style="display:grid;grid-template-columns:1fr 110px 90px 100px 140px 150px;gap:8px;padding:7px 16px;font-size:11px;color:var(--text-3);background:var(--bg2);border-bottom:1px solid var(--border)">
+            <span>Emisor</span><span>RFC</span><span>Fecha</span><span style="text-align:right">Total</span><span>Uso CFDI</span><span style="text-align:center">Categoría</span>
+          </div>
+          <!-- Filas -->
+          <div id="concil-tabla" style="max-height:520px;overflow-y:auto"></div>
+        </div>
+
+      </div>
     </div>
 
     <!-- REPORTES -->
@@ -1315,10 +1390,19 @@ tbody td.mono { font-family: var(--font-mono); font-size: 11px; }
             </div>
           </div>
           <div class="card">
-            <div class="card-hdr"><div class="card-title"><div class="ci ci-blue">📧</div>Correos</div></div>
+            <div class="card-hdr"><div class="card-title"><div class="ci ci-blue">📧</div>Correo y SMTP</div></div>
             <div class="fg">
-              <div class="field"><label>Tu correo</label><input type="email" id="cfg-email" value="" placeholder="tu@correo.com"/></div>
+              <div class="field"><label>Tu correo Gmail</label><input type="email" id="cfg-email" value="" placeholder="tu@gmail.com"/></div>
               <div class="field"><label>Contador (CC)</label><input type="email" id="cfg-email-cc" value="" placeholder="contador@despacho.com"/></div>
+              <div class="field">
+                <label>Contrasena de aplicacion Gmail</label>
+                <input type="password" id="cfg-smtp-pass" value="" placeholder="xxxx xxxx xxxx xxxx"/>
+                <span class="hint">No es tu contrasena normal. Generala en myaccount.google.com/security → Contrasenas de aplicacion</span>
+              </div>
+              <div style="display:flex;gap:10px;align-items:center;margin-top:4px">
+                <button class="btn btn-s btn-sm" onclick="probarCorreo()">📧 Enviar correo de prueba</button>
+                <span id="correo-test-msg" style="font-size:12px;color:var(--text3)"></span>
+              </div>
             </div>
           </div>
         </div>
@@ -1387,6 +1471,7 @@ function nav(page, el) {
   if (page === 'dashboard')     cargarDashboard();
   if (page === 'facturas')      cargarFacturas();
   if (page === 'historial')     cargarHistorial();
+  if (page === 'conciliacion')  cargarConciliacion();
   if (page === 'configuracion') cargarConfig();
   if (page === 'descarga')      calcularRangoAuto();
 }
@@ -1508,8 +1593,9 @@ async function cargarConfig() {
   document.getElementById('cfg-rfc').value      = cfg.rfc      || '';
   document.getElementById('cfg-nombre').value   = cfg.nombre   || '';
   document.getElementById('cfg-regimen').value  = cfg.regimen  || '';
-  document.getElementById('cfg-email').value    = cfg.notif_email || '';
-  document.getElementById('cfg-email-cc').value = cfg.notif_cc    || '';
+  document.getElementById('cfg-email').value    = cfg.notif_email  || '';
+  document.getElementById('cfg-email-cc').value = cfg.notif_cc     || '';
+  document.getElementById('cfg-smtp-pass').value = cfg.smtp_password || '';
   document.getElementById('cfg-dia').value      = cfg.dia_auto || 1;
   document.getElementById('cfg-hora').value     = cfg.hora_auto || '08:00';
   document.getElementById('rfc-display').textContent = cfg.rfc || '—';
@@ -1521,8 +1607,9 @@ async function guardarConfig() {
     rfc:         document.getElementById('cfg-rfc').value.trim().toUpperCase(),
     nombre:      document.getElementById('cfg-nombre').value,
     regimen:     document.getElementById('cfg-regimen').value,
-    notif_email: document.getElementById('cfg-email').value,
-    notif_cc:    document.getElementById('cfg-email-cc').value,
+    notif_email:    document.getElementById('cfg-email').value,
+    notif_cc:       document.getElementById('cfg-email-cc').value,
+    smtp_password:  document.getElementById('cfg-smtp-pass').value,
     dia_auto:    parseInt(document.getElementById('cfg-dia').value),
     hora_auto:   document.getElementById('cfg-hora').value,
   };
@@ -1889,6 +1976,304 @@ async function reanudarSolicitud(id_solicitud, banner) {
 async function cancelarSolicitud(id_solicitud, banner) {
   await apiFetch('POST', '/api/pendientes/cancelar', { id_solicitud });
   banner.remove();
+}
+
+// ── Probar correo ─────────────────────────────────
+async function probarCorreo() {
+  const msg = document.getElementById('correo-test-msg');
+  msg.style.color = 'var(--text3)';
+  msg.textContent = 'Enviando...';
+  // Guardar config primero para asegurar que smtp_password este guardado
+  await guardarConfig();
+  const r = await apiFetch('POST', '/api/correo/probar');
+  msg.style.color = r.ok ? 'var(--em)' : 'var(--red)';
+  msg.textContent = r.msg;
+}
+
+
+// ── Conciliacion ──────────────────────────────────────────────
+let _concilData  = null;
+let _catActiva   = 'todas';
+let _vistaConc   = 'gastos';   // 'gastos' | 'ingresos'
+const CAT_COLORES = {
+  purple:'#7F77DD', teal:'#1D9E75', amber:'#BA7517',
+  blue:'#378ADD',   green:'#639922', coral:'#D85A30',
+  gray:'#888780',   red:'#E24B4A',
+};
+
+async function cargarConciliacion() {
+  document.getElementById('concil-tabla').innerHTML =
+    '<div style="padding:32px;text-align:center;color:var(--text-3)">Cargando...</div>';
+  try {
+    const r = await apiFetch('GET', '/api/conciliacion');
+    if (!r.ok) { toast(r.msg, 'error'); return; }
+    _concilData = r;
+    _catActiva  = 'todas';
+    renderMetricasConcil();
+    renderCategorias();
+    renderFacturasConcil();
+  } catch(e) {
+    document.getElementById('concil-tabla').innerHTML =
+      '<div style="padding:32px;text-align:center;color:var(--color-text-danger)">Error: ' + e.message + '</div>';
+  }
+}
+
+function setVistaConc(vista, btn) {
+  _vistaConc = vista;
+  _catActiva = 'todas';
+  btn.closest('.tabs').querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+
+  // Mostrar/ocultar sidebar de categorías
+  const sidebar = document.getElementById('concil-sidebar');
+  const layout  = document.getElementById('concil-layout');
+  if (vista === 'ingresos') {
+    sidebar.style.display = 'none';
+    layout.style.gridTemplateColumns = '1fr';
+    // Cabecera sin columna de categoría
+    document.getElementById('concil-col-hdr').style.gridTemplateColumns = '1fr 110px 90px 100px';
+    document.getElementById('concil-col-hdr').innerHTML =
+      '<span>Receptor</span><span>RFC Receptor</span><span>Fecha</span><span style="text-align:right">Total</span>';
+  } else {
+    sidebar.style.display = 'flex';
+    sidebar.style.flexDirection = 'column';
+    sidebar.style.gap = '6px';
+    layout.style.gridTemplateColumns = '230px 1fr';
+    document.getElementById('concil-col-hdr').style.gridTemplateColumns = '1fr 110px 90px 100px 140px 150px';
+    document.getElementById('concil-col-hdr').innerHTML =
+      '<span>Emisor</span><span>RFC</span><span>Fecha</span><span style="text-align:right">Total</span><span>Uso CFDI</span><span style="text-align:center">Categoría</span>';
+  }
+  renderCategorias();
+  renderFacturasConcil();
+}
+
+function renderMetricasConcil() {
+  if (!_concilData) return;
+  const { total_gastos, total_ingresos, balance, total_count, ingresos_count, totales } = _concilData;
+  const sinCat = totales['sin_cat'] || { count:0, monto:0 };
+  document.getElementById('cm-ingresos').textContent   = fmt(total_ingresos);
+  document.getElementById('cm-ingresos-n').textContent = (ingresos_count||0) + ' facturas emitidas';
+  document.getElementById('cm-gastos').textContent     = fmt(total_gastos);
+  document.getElementById('cm-gastos-n').textContent   = (total_count||0) + ' facturas recibidas';
+  const bal = document.getElementById('cm-balance');
+  bal.textContent = fmt(balance);
+  bal.className   = 'mc-val ' + (balance >= 0 ? 'green' : 'red');
+  document.getElementById('cm-sincat').textContent   = sinCat.count;
+  document.getElementById('cm-sincat-n').textContent = sinCat.count === 0 ? 'todo clasificado' : 'pendientes de clasificar';
+  document.getElementById('concil-sub').textContent  =
+    (total_count||0) + ' gastos · ' + (ingresos_count||0) + ' ingresos · balance ' + fmt(balance);
+}
+
+function renderCategorias() {
+  if (!_concilData || _vistaConc === 'ingresos') return;
+  const { categorias, totales, total_gastos } = _concilData;
+  const total = total_gastos || 1;
+  const cont  = document.getElementById('concil-cats');
+
+  let html = `<div class="cat-item${_catActiva==='todas'?' active':''}" onclick="seleccionarCat('todas')"
+    ondragover="catDragOver(event,this)" ondragleave="catDragLeave(this)" ondrop="catDrop(event,'sin_cat',this)">
+    <div class="ci-name">Todos los gastos</div>
+    <div class="ci-meta">
+      <span class="ci-count">${_concilData.total_count} facturas</span>
+      <span class="ci-monto">${fmt(_concilData.total_gastos)}</span>
+    </div>
+    <div class="ci-bar"><div class="ci-bar-fill" style="width:100%"></div></div>
+  </div>`;
+
+  for (const cat of categorias) {
+    const t     = totales[cat.id] || { count:0, monto:0 };
+    const pct   = Math.round((t.monto / total) * 100);
+    const color = CAT_COLORES[cat.color] || '#888';
+    const isSin = cat.id === 'sin_cat';
+    html += `<div class="cat-item${_catActiva===cat.id?' active':''}" onclick="seleccionarCat('${cat.id}')"
+      ondragover="catDragOver(event,this)" ondragleave="catDragLeave(this)" ondrop="catDrop(event,'${cat.id}',this)">
+      <div style="display:flex;align-items:center;gap:6px">
+        <span style="width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0"></span>
+        <span class="ci-name">${cat.nombre}</span>
+      </div>
+      <div class="ci-meta">
+        <span class="ci-count">${t.count} facturas</span>
+        <span class="ci-monto"${isSin&&t.count>0?' style="color:var(--gold)"':''}>${fmt(t.monto)}</span>
+      </div>
+      <div class="ci-bar"><div class="ci-bar-fill" style="width:${pct}%;background:${color}"></div></div>
+    </div>`;
+  }
+  cont.innerHTML = html;
+}
+
+function seleccionarCat(catId) {
+  _catActiva = catId;
+  renderCategorias();
+  renderFacturasConcil();
+}
+
+function renderFacturasConcil() {
+  if (!_concilData) return;
+  const q    = (document.getElementById('concil-busq')?.value || '').toLowerCase();
+  const cats = _concilData.categorias;
+  const tbody = document.getElementById('concil-tabla');
+
+  if (_vistaConc === 'ingresos') {
+    // Vista ingresos: facturas emitidas, sin categorías
+    let ingresos = _concilData.ingresos || [];
+    if (q) ingresos = ingresos.filter(f =>
+      (f.nombre_receptor||'').toLowerCase().includes(q) ||
+      (f.rfc_receptor||'').toLowerCase().includes(q) ||
+      (f.descripcion||'').toLowerCase().includes(q)
+    );
+    document.getElementById('concil-panel-titulo').textContent = 'Ingresos — Facturas emitidas';
+    document.getElementById('concil-panel-count').textContent  =
+      ingresos.length + ' facturas · ' + fmt(ingresos.reduce((s,f)=>s+f.total,0));
+
+    tbody.innerHTML = ingresos.length
+      ? ingresos.map(f => `<div class="concil-row" style="grid-template-columns:1fr 110px 90px 100px">
+          <div>
+            <div class="cr-emisor">${f.nombre_receptor||'(sin nombre)'}</div>
+            <div class="cr-rfc">${f.rfc_receptor||''}</div>
+          </div>
+          <span class="cr-rfc">${f.rfc_receptor||''}</span>
+          <span class="cr-fecha">${f.fecha||''}</span>
+          <span class="cr-monto" style="color:var(--em)">${fmt(f.total)}</span>
+        </div>`).join('')
+      : '<div style="padding:32px;text-align:center;color:var(--text-3)">Sin facturas emitidas en el período.</div>';
+    return;
+  }
+
+  // Vista gastos: facturas recibidas con categorías
+  let facturas = _concilData.facturas || [];
+  if (_catActiva !== 'todas') facturas = facturas.filter(f => f.categoria === _catActiva);
+  if (q) facturas = facturas.filter(f =>
+    (f.nombre_emisor||'').toLowerCase().includes(q) ||
+    (f.rfc_emisor||'').toLowerCase().includes(q) ||
+    (f.descripcion||'').toLowerCase().includes(q) ||
+    (f.uso_cfdi||'').toLowerCase().includes(q) ||
+    (f.uso_cfdi_desc||'').toLowerCase().includes(q)
+  );
+
+  const catActObj = cats.find(c => c.id === _catActiva);
+  document.getElementById('concil-panel-titulo').textContent =
+    _catActiva === 'todas' ? 'Todos los gastos' : (catActObj?.nombre || _catActiva);
+  document.getElementById('concil-panel-count').textContent =
+    facturas.length + ' facturas · ' + fmt(facturas.reduce((s,f)=>s+f.total,0));
+
+  tbody.innerHTML = facturas.length
+    ? facturas.map(f => {
+        const color = CAT_COLORES[cats.find(c=>c.id===f.categoria)?.color] || '#888';
+        const esSin = f.categoria === 'sin_cat';
+        const esAuto = f.cat_origen === 'auto';
+        return `<div class="concil-row" draggable="true"
+            ondragstart="dragStart(event,'${f.uuid}')"
+            ondragend="dragEnd(event)"
+            style="grid-template-columns:1fr 110px 90px 100px 140px 150px">
+          <div style="display:flex;align-items:center;gap:8px;min-width:0">
+            <svg style="width:10px;height:14px;opacity:.25;cursor:grab;flex-shrink:0" viewBox="0 0 8 14" fill="currentColor">
+              <circle cx="2" cy="2" r="1.2"/><circle cx="6" cy="2" r="1.2"/>
+              <circle cx="2" cy="7" r="1.2"/><circle cx="6" cy="7" r="1.2"/>
+              <circle cx="2" cy="12" r="1.2"/><circle cx="6" cy="12" r="1.2"/>
+            </svg>
+            <div style="min-width:0">
+              <div class="cr-emisor">${f.nombre_emisor||'(sin nombre)'}</div>
+              <div class="cr-rfc">${f.rfc_emisor||''}</div>
+            </div>
+          </div>
+          <span class="cr-rfc">${f.rfc_emisor||''}</span>
+          <span class="cr-fecha">${f.fecha||''}</span>
+          <span class="cr-monto">${fmt(f.total)}</span>
+          <div style="font-size:10px">
+            <span style="font-weight:600;color:var(--text-2)">${f.uso_cfdi||'—'}</span>
+            <div style="color:var(--text-3);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:135px">${f.uso_cfdi_desc||''}</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:5px">
+            <span style="width:7px;height:7px;border-radius:50%;background:${esSin?'var(--gold)':color};flex-shrink:0"></span>
+            <select class="cr-sel" onchange="cambiarCategoria('${f.uuid}',this.value)"
+              title="${esAuto?'Clasificado automáticamente por UsoCFDI del SAT':'Clasificado manualmente'}"
+              style="${esAuto?'border-style:dashed;':''}">
+              ${cats.map(c=>`<option value="${c.id}"${c.id===f.categoria?' selected':''}>${c.nombre}</option>`).join('')}
+            </select>
+          </div>
+        </div>`;
+      }).join('')
+    : '<div style="padding:32px;text-align:center;color:var(--text-3)">Sin gastos en esta categoría.</div>';
+}
+
+async function cambiarCategoria(uuid, nueva_cat) {
+  const r = await apiFetch('POST', '/api/conciliacion/clasificar', { uuid, categoria: nueva_cat });
+  if (!r.ok) { toast(r.msg, 'error'); return; }
+  if (_concilData) {
+    const f = _concilData.facturas.find(f => f.uuid === uuid);
+    if (f) {
+      const tot   = _concilData.totales;
+      const antes = f.categoria;
+      if (tot[antes]) { tot[antes].count--; tot[antes].monto = Math.round((tot[antes].monto - f.total)*100)/100; }
+      if (!tot[nueva_cat]) tot[nueva_cat] = { count:0, monto:0 };
+      tot[nueva_cat].count++;
+      tot[nueva_cat].monto = Math.round((tot[nueva_cat].monto + f.total)*100)/100;
+      f.categoria  = nueva_cat;
+      f.cat_origen = 'manual';
+    }
+    renderMetricasConcil();
+    renderCategorias();
+  }
+}
+
+async function nuevaCategoria() {
+  const nombre = prompt('Nombre de la nueva categoría:');
+  if (!nombre || !nombre.trim()) return;
+  if (!_concilData) return;
+  const id      = nombre.trim().toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'');
+  const colores = ['purple','teal','amber','blue','green','coral','pink'];
+  const usados  = _concilData.categorias.map(c=>c.color);
+  const color   = colores.find(c=>!usados.includes(c)) || 'gray';
+  const cats    = _concilData.categorias.filter(c=>c.id!=='sin_cat');
+  cats.push({ id, nombre:nombre.trim(), color });
+  cats.push({ id:'sin_cat', nombre:'Sin clasificar', color:'gray' });
+  const r = await apiFetch('POST', '/api/conciliacion/categorias', cats);
+  if (r.ok) {
+    _concilData.categorias = r.categorias;
+    _concilData.totales[id] = { count:0, monto:0 };
+    renderCategorias();
+    renderFacturasConcil();
+    toast('Categoría "' + nombre.trim() + '" creada.', 'success');
+  } else {
+    toast(r.msg, 'error');
+  }
+}
+
+async function exportarConciliacion() {
+  const r = await apiFetch('POST', '/api/conciliacion/exportar-excel');
+  toast(r.msg, r.ok ? 'success' : 'error');
+}
+
+// ── Drag & drop conciliacion ──────────────────────────────────
+let _dragUUID = null;
+
+function dragStart(e, uuid) {
+  _dragUUID = uuid;
+  e.dataTransfer.effectAllowed = 'move';
+  e.currentTarget.style.opacity = '0.5';
+}
+function dragEnd(e) {
+  e.currentTarget.style.opacity = '';
+  _dragUUID = null;
+}
+function catDragOver(e, el) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  el.style.borderColor = 'var(--em)';
+  el.style.background  = 'var(--em-d)';
+}
+function catDragLeave(el) {
+  el.style.borderColor = '';
+  el.style.background  = '';
+}
+async function catDrop(e, catId, el) {
+  e.preventDefault();
+  catDragLeave(el);
+  if (!_dragUUID || !_concilData) return;
+  await cambiarCategoria(_dragUUID, catId);
+  // Si el panel muestra la categoría de origen, quitamos la fila visualmente
+  renderFacturasConcil();
+  _dragUUID = null;
 }
 
 // ── Init ──────────────────────────────────────────

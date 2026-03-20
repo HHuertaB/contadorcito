@@ -111,6 +111,8 @@ CFG_DEFAULT = {
     "rfc": "", "fiel_cer": "", "fiel_key": "",
     "fiel_cer_nombre": "", "fiel_key_nombre": "",
     "notif_email": "", "notif_cc": "",
+    "notif_activo": True,
+    "smtp_password": "",        # Contrasena de aplicacion de Gmail (no la normal)
     "dia_auto": 1, "hora_auto": "08:00",
     "nombre": "", "regimen": "",
 }
@@ -140,7 +142,116 @@ def _save_hist(h):
         json.dumps(h, indent=2, ensure_ascii=False, default=str), "utf-8"
     )
 
-# ── Parseo CFDI ───────────────────────────────────────────────
+# ── Envío de correo SMTP ──────────────────────────────────────
+def _enviar_correo(ruta_excel: str, fecha_ini: str, fecha_fin: str,
+                   total: int, nuevos: int, overwrite: int) -> tuple[bool, str]:
+    """
+    Envía el reporte Excel por correo via SMTP usando Gmail.
+    Requiere una contraseña de aplicación de Google (no la contraseña normal).
+    Devuelve (ok, mensaje).
+    """
+    import smtplib
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text      import MIMEText
+    from email.mime.base      import MIMEBase
+    from email                import encoders
+
+    cfg = _load_cfg()
+    destinatario = cfg.get("notif_email", "").strip()
+    smtp_password = cfg.get("smtp_password", "").strip()
+
+    if not destinatario:
+        return False, "No hay correo de destino configurado."
+    if not smtp_password:
+        return False, "No hay contrasena de aplicacion configurada."
+    if not ruta_excel or not Path(ruta_excel).exists():
+        return False, "El archivo Excel no existe."
+
+    periodo = f"{fecha_ini} al {fecha_fin}"
+    asunto  = f"Reporte CFDIs — {periodo} — ContaSAT"
+
+    cuerpo_html = f"""
+    <html><body style="font-family:Arial,sans-serif;color:#333;max-width:600px">
+      <div style="background:#1F3864;padding:20px;border-radius:8px 8px 0 0">
+        <h2 style="color:#fff;margin:0">ContaSAT — Reporte de CFDIs</h2>
+        <p style="color:#aac4f0;margin:6px 0 0">Descarga automatica completada</p>
+      </div>
+      <div style="background:#f8f9fa;padding:20px;border:1px solid #dee2e6;border-top:none">
+        <p>Se ha completado la descarga de CFDIs para el periodo:</p>
+        <p style="font-size:18px;font-weight:bold;color:#1F3864">{periodo}</p>
+        <table style="width:100%;border-collapse:collapse;margin:16px 0">
+          <tr style="background:#1F3864;color:#fff">
+            <th style="padding:10px;text-align:left">Concepto</th>
+            <th style="padding:10px;text-align:right">Cantidad</th>
+          </tr>
+          <tr style="background:#fff">
+            <td style="padding:10px;border-bottom:1px solid #dee2e6">Total CFDIs procesados</td>
+            <td style="padding:10px;text-align:right;font-weight:bold">{total}</td>
+          </tr>
+          <tr style="background:#f8f9fa">
+            <td style="padding:10px;border-bottom:1px solid #dee2e6">CFDIs nuevos</td>
+            <td style="padding:10px;text-align:right;color:#00845A;font-weight:bold">{nuevos}</td>
+          </tr>
+          <tr style="background:#fff">
+            <td style="padding:10px">Sobreescritos (duplicados)</td>
+            <td style="padding:10px;text-align:right">{overwrite}</td>
+          </tr>
+        </table>
+        <p style="color:#666;font-size:13px">
+          Se adjunta el reporte completo en formato Excel con las hojas
+          Resumen, Emitidas y Recibidas.
+        </p>
+      </div>
+      <div style="background:#e9ecef;padding:12px 20px;border-radius:0 0 8px 8px;
+                  font-size:12px;color:#666;border:1px solid #dee2e6;border-top:none">
+        Generado automaticamente por ContaSAT · {datetime.datetime.now().strftime("%d/%m/%Y %H:%M")}
+      </div>
+    </body></html>
+    """
+
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["From"]    = destinatario
+        msg["To"]      = destinatario
+        msg["Subject"] = asunto
+
+        cc = cfg.get("notif_cc", "").strip()
+        if cc:
+            msg["Cc"] = cc
+
+        msg.attach(MIMEText(cuerpo_html, "html", "utf-8"))
+
+        # Adjuntar Excel
+        with open(ruta_excel, "rb") as f:
+            adjunto = MIMEBase("application",
+                               "vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            adjunto.set_payload(f.read())
+            encoders.encode_base64(adjunto)
+            nombre_archivo = Path(ruta_excel).name
+            adjunto.add_header("Content-Disposition", "attachment",
+                               filename=nombre_archivo)
+            msg.attach(adjunto)
+
+        # Enviar via Gmail SMTP
+        destinatarios = [destinatario]
+        if cc:
+            destinatarios += [c.strip() for c in cc.split(",") if c.strip()]
+
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(destinatario, smtp_password)
+            server.sendmail(destinatario, destinatarios, msg.as_bytes())
+
+        log.info(f"Correo enviado a {destinatarios}")
+        return True, f"Correo enviado a {destinatario}"
+
+    except smtplib.SMTPAuthenticationError:
+        return False, ("Error de autenticacion Gmail. Verifica que hayas generado "
+                       "una 'Contrasena de aplicacion' en myaccount.google.com/security "
+                       "y la hayas pegado en Configuracion > Correo.")
+    except smtplib.SMTPException as e:
+        return False, f"Error SMTP: {e}"
+    except Exception as e:
+        return False, f"Error al enviar correo: {e}"
 NS = {
     "cfdi":  "http://www.sat.gob.mx/cfd/4",
     "cfdi3": "http://www.sat.gob.mx/cfd/3",
@@ -171,9 +282,14 @@ def _parsear(ruta: Path, tipo: str) -> dict:
             "subtotal": root.get("SubTotal", ""), "total": total,
             "moneda": root.get("Moneda", "MXN"),
             "tipo_comp": root.get("TipoDeComprobante", ""),
-            "metodo_pago": root.get("MetodoPago", ""),
-            "forma_pago": root.get("FormaPago", ""),
-            "archivo": ruta.name,
+            "metodo_pago":      root.get("MetodoPago", ""),
+            "forma_pago":       root.get("FormaPago", ""),
+            "tipo_comprobante": root.get("TipoDeComprobante", ""),
+            "uso_cfdi":         a(receptor, "UsoCFDI"),
+            "uso_cfdi_desc":    USO_CFDI_CAT.get(a(receptor, "UsoCFDI"), {}).get("desc", ""),
+            "regimen_emisor":   a(emisor,   "RegimenFiscal"),
+            "clave_prod_serv":  a(concepto, "ClaveProdServ"),
+            "archivo":          ruta.name,
         }
     except Exception as e:
         return {"tipo": tipo, "archivo": ruta.name, "error": str(e), "total": 0}
@@ -322,6 +438,44 @@ def limpiar_historial():
         return jsonify({"ok": True, "msg": "Historial limpiado."})
     except Exception as e:
         return jsonify({"ok": False, "msg": str(e)})
+
+# ── Correo SMTP ───────────────────────────────────────────────
+@app.route("/api/correo/probar", methods=["POST"])
+def probar_correo():
+    """Envía un correo de prueba para validar la configuración SMTP."""
+    try:
+        import smtplib
+        cfg = _load_cfg()
+        destinatario  = cfg.get("notif_email", "").strip()
+        smtp_password = cfg.get("smtp_password", "").strip()
+
+        if not destinatario:
+            return jsonify({"ok": False, "msg": "Configura el correo de destino primero."})
+        if not smtp_password:
+            return jsonify({"ok": False, "msg": "Configura la contrasena de aplicacion primero."})
+
+        from email.mime.text import MIMEText
+        msg = MIMEText(
+            "Este es un correo de prueba enviado por ContaSAT.\n\n"
+            "Si lo recibes, la configuracion SMTP es correcta.",
+            "plain", "utf-8"
+        )
+        msg["From"]    = destinatario
+        msg["To"]      = destinatario
+        msg["Subject"] = "ContaSAT — Prueba de correo"
+
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(destinatario, smtp_password)
+            server.sendmail(destinatario, [destinatario], msg.as_bytes())
+
+        return jsonify({"ok": True, "msg": f"Correo de prueba enviado a {destinatario}. Revisa tu bandeja."})
+
+    except smtplib.SMTPAuthenticationError:
+        return jsonify({"ok": False,
+                        "msg": "Error de autenticacion. Verifica que sea una "
+                               "Contrasena de aplicacion de Google, no tu contrasena normal."})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": f"Error: {e}"})
 
 # ── Solicitudes pendientes ────────────────────────────────────
 @app.route("/api/pendientes", methods=["GET"])
@@ -906,6 +1060,15 @@ def _descarga_worker(inicio: str, fin: str, tipo_cfdi: str):
         _progreso = 100
         _emit(f"COMPLETADO: {len(todos)} CFDIs | {nuevos} nuevos | {overwr} overwrite", "ok")
 
+        # Enviar correo si esta configurado
+        cfg = _load_cfg()
+        if cfg.get("notif_activo", True) and cfg.get("notif_email") and cfg.get("smtp_password"):
+            _emit("Enviando reporte por correo...", "info")
+            ruta_excel_str = str(base_rep / "reportes" / f"CFDIs_{fecha_ini}_{fecha_fin}.xlsx")
+            ok, msg = _enviar_correo(ruta_excel_str, str(fecha_ini), str(fecha_fin),
+                                     len(todos), nuevos, overwr)
+            _emit(msg, "ok" if ok else "warn")
+
     except Exception as e:
         _emit(f"Error inesperado: {e}", "error")
         log.exception("Error en descarga worker")
@@ -1171,6 +1334,245 @@ def get_log():
     try:
         lines = LOG_FILE.read_text("utf-8").splitlines()[-100:] if LOG_FILE.exists() else []
         return jsonify({"ok": True, "lines": lines})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)})
+
+
+# ── Catálogo UsoCFDI del SAT (Anexo 20 CFDI 4.0) ─────────────
+USO_CFDI_CAT = {
+    "G01": {"desc": "Adquisición de mercancias",               "tipo": "gasto"},
+    "G02": {"desc": "Devoluciones, descuentos o bonificaciones","tipo": "gasto"},
+    "G03": {"desc": "Gastos en general",                       "tipo": "gasto"},
+    "I01": {"desc": "Construcciones",                          "tipo": "gasto"},
+    "I02": {"desc": "Mobiliario y equipo de oficina",           "tipo": "gasto"},
+    "I03": {"desc": "Equipo de transporte",                    "tipo": "gasto"},
+    "I04": {"desc": "Equipo de computo y accesorios",          "tipo": "gasto"},
+    "I05": {"desc": "Dados, troqueles y herramental",          "tipo": "gasto"},
+    "I06": {"desc": "Comunicaciones telefónicas",              "tipo": "gasto"},
+    "I07": {"desc": "Comunicaciones satelitales",              "tipo": "gasto"},
+    "I08": {"desc": "Otra maquinaria y equipo",                "tipo": "gasto"},
+    "D01": {"desc": "Honorarios médicos y gastos hospitalarios","tipo": "gasto"},
+    "D02": {"desc": "Gastos médicos por incapacidad",          "tipo": "gasto"},
+    "D03": {"desc": "Gastos funerales",                        "tipo": "gasto"},
+    "D04": {"desc": "Donativos",                               "tipo": "gasto"},
+    "D05": {"desc": "Intereses hipotecarios",                  "tipo": "gasto"},
+    "D06": {"desc": "Aportaciones voluntarias al SAR",         "tipo": "gasto"},
+    "D07": {"desc": "Primas por seguros de gastos médicos",    "tipo": "gasto"},
+    "D08": {"desc": "Gastos de transportación escolar",        "tipo": "gasto"},
+    "D09": {"desc": "Depósitos en cuentas para el ahorro",     "tipo": "gasto"},
+    "D10": {"desc": "Pagos por servicios educativos",          "tipo": "gasto"},
+    "CN01":{"desc": "Nómina",                                  "tipo": "gasto"},
+    "CP01":{"desc": "Pagos",                                   "tipo": "neutro"},
+    "S01": {"desc": "Sin efectos fiscales",                    "tipo": "neutro"},
+}
+
+# Mapeo automático UsoCFDI → categoría ContaSAT
+USO_A_CATEGORIA = {
+    "G01": "compras",  "G02": "compras",  "G03": "compras",
+    "I01": "compras",  "I02": "compras",  "I03": "compras",
+    "I04": "compras",  "I05": "compras",  "I06": "compras",
+    "I07": "compras",  "I08": "compras",
+    "D01": "gastos_med","D02": "gastos_med","D07": "gastos_med",
+    "D03": "compras",  "D04": "compras",  "D05": "compras",
+    "D06": "nomina",   "D08": "compras",  "D09": "compras",
+    "D10": "compras",  "CN01":"nomina",
+    "CP01":"sin_cat",  "S01": "sin_cat",
+}
+
+# ── Conciliación ──────────────────────────────────────────────
+CONCIL_FILE = DATA_DIR / "conciliacion.json"
+
+CATEGORIAS_DEFAULT = [
+    {"id": "honorarios", "nombre": "Honorarios profesionales", "color": "purple"},
+    {"id": "gastos_med", "nombre": "Gastos médicos",           "color": "teal"},
+    {"id": "nomina",     "nombre": "Nómina",                   "color": "green"},
+    {"id": "compras",    "nombre": "Compras y mercancías",     "color": "coral"},
+    {"id": "sin_cat",    "nombre": "Sin clasificar",           "color": "gray"},
+]
+
+def _load_concil():
+    if CONCIL_FILE.exists():
+        try:
+            return json.loads(CONCIL_FILE.read_text("utf-8"))
+        except Exception:
+            pass
+    return {"categorias": CATEGORIAS_DEFAULT, "clasificaciones": {}}
+
+def _save_concil(data):
+    CONCIL_FILE.write_text(
+        json.dumps(data, indent=2, ensure_ascii=False), "utf-8"
+    )
+
+@app.route("/api/conciliacion", methods=["GET"])
+def get_conciliacion():
+    """Devuelve categorías + facturas con su clasificación."""
+    try:
+        concil  = _load_concil()
+        clases  = concil.get("clasificaciones", {})
+        cats    = concil.get("categorias", CATEGORIAS_DEFAULT)
+
+        xmls = list(DATA_DIR.rglob("*.xml"))
+
+        # GASTOS: facturas recibidas (alguien nos cobró)
+        recibidas = [_parsear(x, "Recibida") for x in xmls if "recibidas" in x.parts]
+        recibidas = [f for f in recibidas if "error" not in f]
+
+        # INGRESOS: facturas emitidas (nosotros cobramos)
+        emitidas = [_parsear(x, "Emitida") for x in xmls if "emitidas" in x.parts]
+        emitidas = [f for f in emitidas if "error" not in f]
+
+        # Asignar categoría a gastos (recibidas):
+        # Prioridad 1: clasificación manual guardada
+        # Prioridad 2: auto-clasificación por UsoCFDI del SAT
+        for f in recibidas:
+            uuid     = f.get("uuid", "")
+            uso_cfdi = f.get("uso_cfdi", "")
+            if uuid in clases:
+                f["categoria"]      = clases[uuid]
+                f["cat_origen"]     = "manual"
+            elif uso_cfdi in USO_A_CATEGORIA:
+                f["categoria"]      = USO_A_CATEGORIA[uso_cfdi]
+                f["cat_origen"]     = "auto"
+            else:
+                f["categoria"]      = "sin_cat"
+                f["cat_origen"]     = "sin_clasificar"
+
+        # Para emitidas solo necesitamos totales (son ingresos)
+        for f in emitidas:
+            f["categoria"]  = "ingreso"
+            f["cat_origen"] = "auto"
+
+        # Totales de gastos por categoría
+        totales = {}
+        for cat in cats:
+            cid   = cat["id"]
+            grupo = [f for f in recibidas if f.get("categoria") == cid]
+            totales[cid] = {
+                "count": len(grupo),
+                "monto": round(sum(f.get("total", 0) for f in grupo), 2),
+            }
+
+        total_recibidas = round(sum(f.get("total", 0) for f in recibidas), 2)
+        total_emitidas  = round(sum(f.get("total", 0) for f in emitidas),  2)
+
+        return jsonify({
+            "ok":              True,
+            "categorias":      cats,
+            "totales":         totales,
+            "facturas":        recibidas,
+            "ingresos":        emitidas,
+            "total_gastos":    total_recibidas,
+            "total_ingresos":  total_emitidas,
+            "balance":         round(total_emitidas - total_recibidas, 2),
+            "total_count":     len(recibidas),
+            "ingresos_count":  len(emitidas),
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)})
+
+@app.route("/api/conciliacion/clasificar", methods=["POST"])
+def clasificar_factura():
+    """Asigna una categoría a una factura por UUID."""
+    try:
+        d    = request.get_json() or {}
+        uuid = d.get("uuid", "").strip()
+        cat  = d.get("categoria", "sin_cat").strip()
+        if not uuid:
+            return jsonify({"ok": False, "msg": "UUID requerido."})
+        concil = _load_concil()
+        concil["clasificaciones"][uuid] = cat
+        _save_concil(concil)
+        return jsonify({"ok": True, "uuid": uuid, "categoria": cat})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)})
+
+@app.route("/api/conciliacion/clasificar-lote", methods=["POST"])
+def clasificar_lote():
+    """Clasifica múltiples facturas a la vez: [{"uuid": ..., "categoria": ...}]"""
+    try:
+        items  = request.get_json() or []
+        concil = _load_concil()
+        n = 0
+        for item in items:
+            uuid = item.get("uuid", "").strip()
+            cat  = item.get("categoria", "sin_cat").strip()
+            if uuid:
+                concil["clasificaciones"][uuid] = cat
+                n += 1
+        _save_concil(concil)
+        return jsonify({"ok": True, "clasificadas": n})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)})
+
+@app.route("/api/conciliacion/categorias", methods=["GET"])
+def get_categorias():
+    concil = _load_concil()
+    return jsonify({"ok": True, "categorias": concil.get("categorias", CATEGORIAS_DEFAULT)})
+
+@app.route("/api/conciliacion/categorias", methods=["POST"])
+def save_categorias():
+    """Guarda la lista completa de categorías (crear / renombrar / reordenar)."""
+    try:
+        cats   = request.get_json() or []
+        concil = _load_concil()
+        # Asegurar que siempre exista sin_cat
+        ids = [c["id"] for c in cats]
+        if "sin_cat" not in ids:
+            cats.append({"id": "sin_cat", "nombre": "Sin clasificar", "color": "gray"})
+        concil["categorias"] = cats
+        _save_concil(concil)
+        return jsonify({"ok": True, "categorias": cats})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)})
+
+@app.route("/api/conciliacion/exportar-excel", methods=["POST"])
+def exportar_conciliacion_excel():
+    """Genera Excel con una hoja por categoría."""
+    try:
+        concil    = _load_concil()
+        clases    = concil.get("clasificaciones", {})
+        cats      = concil.get("categorias", CATEGORIAS_DEFAULT)
+        xmls      = list(DATA_DIR.rglob("*.xml"))
+        recibidas = [_parsear(x, "Recibida") for x in xmls if "recibidas" in x.parts]
+        recibidas = [f for f in recibidas if "error" not in f]
+        for f in recibidas:
+            f["categoria"] = clases.get(f.get("uuid",""), "sin_cat")
+
+        wb  = openpyxl.Workbook()
+        fh  = PatternFill("solid", fgColor="1F3864")
+        fnt = Font(color="FFFFFF", bold=True)
+        COLS = ["uuid","fecha","rfc_emisor","nombre_emisor",
+                "descripcion","subtotal","total","moneda","categoria"]
+
+        ws = wb.active; ws.title = "Resumen"
+        ws.cell(1,1,"Categoría").font = Font(bold=True)
+        ws.cell(1,2,"Facturas").font  = Font(bold=True)
+        ws.cell(1,3,"Total MXN").font = Font(bold=True)
+        for r, cat in enumerate(cats, 2):
+            grupo = [f for f in recibidas if f.get("categoria") == cat["id"]]
+            ws.cell(r,1,cat["nombre"])
+            ws.cell(r,2,len(grupo))
+            ws.cell(r,3,round(sum(f.get("total",0) for f in grupo), 2))
+
+        for cat in cats:
+            grupo = [f for f in recibidas if f.get("categoria") == cat["id"]]
+            if not grupo:
+                continue
+            nombre_hoja = cat["nombre"][:31]
+            wsd = wb.create_sheet(nombre_hoja)
+            for c, col in enumerate(COLS, 1):
+                cell = wsd.cell(1, c, col.replace("_"," ").title())
+                cell.fill = fh; cell.font = fnt
+            for r, f in enumerate(grupo, 2):
+                for c, col in enumerate(COLS, 1):
+                    wsd.cell(r, c, f.get(col, ""))
+            wsd.auto_filter.ref = wsd.dimensions
+
+        hoy  = datetime.date.today()
+        ruta = DATA_DIR / "reportes" / f"Conciliacion_{hoy}.xlsx"
+        ruta.parent.mkdir(parents=True, exist_ok=True)
+        wb.save(ruta)
+        return jsonify({"ok": True, "msg": f"Excel guardado: {ruta}", "ruta": str(ruta)})
     except Exception as e:
         return jsonify({"ok": False, "msg": str(e)})
 
